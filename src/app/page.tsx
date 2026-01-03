@@ -170,7 +170,6 @@ export default function Page() {
       ))}
     </select>
   );
-
   return (
   <main className="min-h-screen bg-zinc-950 text-zinc-100 p-4">
     <div className="max-w-4xl mx-auto space-y-6">
