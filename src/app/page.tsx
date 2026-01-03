@@ -172,120 +172,35 @@ export default function Page() {
   );
 
   return (
-    <main className="mx-auto max-w-3xl p-4 space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold">Taberna Smash 2026</h1>
-        <p className="text-sm opacity-70">
-          Registrar sets BO3 (2v2) + winrate por jugador y por dúo
+  <main className="min-h-screen bg-zinc-950 text-zinc-100 p-4">
+    <div className="max-w-4xl mx-auto space-y-6">
+
+      <header className="text-center">
+        <h1 className="text-3xl font-bold">Taberna Smash 2026</h1>
+        <p className="text-zinc-400 mt-1">
+          Registro de sets y estadísticas
         </p>
       </header>
 
-      {msg && <div className="rounded-xl border p-3 text-sm">{msg}</div>}
-
-      <section className="rounded-2xl border p-4 space-y-4">
-        <h2 className="text-xl font-semibold">Registrar set (BO3)</h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-xl border p-3 space-y-2">
-            <div className="font-semibold">Team A</div>
-            <Select value={a1} onChange={setA1} />
-            <Select value={a2} onChange={setA2} />
-          </div>
-
-          <div className="rounded-xl border p-3 space-y-2">
-            <div className="font-semibold">Team B</div>
-            <Select value={b1} onChange={setB1} />
-            <Select value={b2} onChange={setB2} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(2, 0)}>
-            A 2–0
-          </button>
-          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(2, 1)}>
-            A 2–1
-          </button>
-          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(1, 2)}>
-            B 2–1
-          </button>
-          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(0, 2)}>
-            B 2–0
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <button className="rounded-xl border px-4 py-2 font-semibold" onClick={undoLast}>
-            Deshacer último
-          </button>
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className="opacity-70">Min sets</span>
-            <input
-              type="number"
-              min={1}
-              max={99}
-              value={minSets}
-              onChange={(e) => setMinSets(Number(e.target.value))}
-              className="w-20 rounded-xl border px-2 py-1"
-            />
-          </div>
-        </div>
-      </section>
-
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-2xl border p-4">
-          <h3 className="text-lg font-semibold mb-3">Top jugadores</h3>
-          {playerStats.length === 0 ? (
-            <div className="text-sm opacity-70">Sin datos (o no cumplen min sets).</div>
-          ) : (
-            <div className="space-y-2">
-              {playerStats.map((r, i) => (
-                <div key={r.id} className="flex items-center justify-between rounded-xl border px-3 py-2">
-                  <div className="font-semibold">#{i + 1} {r.tag}</div>
-                  <div className="text-sm">{r.wins}-{r.losses} · {pct(r.winrate)}</div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="bg-zinc-900 rounded-xl p-4">
+          <h2 className="font-semibold mb-2">Registrar Set</h2>
+          <p className="text-sm text-zinc-400">
+            Selecciona equipos y resultado
+          </p>
         </div>
 
-        <div className="rounded-2xl border p-4">
-          <h3 className="text-lg font-semibold mb-3">Top teams (dúos)</h3>
-          {teamStats.length === 0 ? (
-            <div className="text-sm opacity-70">Sin datos (o no cumplen min sets).</div>
-          ) : (
-            <div className="space-y-2">
-              {teamStats.map((r, i) => (
-                <div key={r.key} className="flex items-center justify-between rounded-xl border px-3 py-2">
-                  <div className="font-semibold">#{i + 1} {r.name}</div>
-                  <div className="text-sm">{r.wins}-{r.losses} · {pct(r.winrate)}</div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="bg-zinc-900 rounded-xl p-4">
+          <h2 className="font-semibold mb-2">Ranking</h2>
+          <p className="text-sm text-zinc-400">
+            Winrate por jugador
+          </p>
         </div>
       </section>
 
-      <section className="rounded-2xl border p-4">
-        <h3 className="text-lg font-semibold mb-3">Historial</h3>
-        {sets.length === 0 ? (
-          <div className="text-sm opacity-70">Aún no hay sets registrados.</div>
-        ) : (
-          <div className="space-y-2">
-            {sets.slice(0, 15).map((s) => {
-              const a = `${tagById.get(s.a1)}+${tagById.get(s.a2)}`;
-              const b = `${tagById.get(s.b1)}+${tagById.get(s.b2)}`;
-              return (
-                <div key={s.id} className="rounded-xl border px-3 py-2 text-sm flex items-center justify-between">
-                  <div>{a} <span className="opacity-60">vs</span> {b}</div>
-                  <div className="font-semibold">{s.aGames}-{s.bGames}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-    </main>
-  );
-}
+      <footer className="text-center text-xs text-zinc-500">
+        Taberna Smash · Hecho para el grupo
+      </footer>
+    </div>
+  </main>
+);
