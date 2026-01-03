@@ -10,12 +10,17 @@ type SetRow = {
   a2: string;
   b1: string;
   b2: string;
-  aGames: number; // 2 or 1
-  bGames: number; // 0 or 1 or 2
-  createdAt: string;
+  aGames: number;
+  bGames: number;
+  createdAt: string; // ISO
 };
 
 const STORAGE_KEY = "taberna_smash_sets_v1";
+const ELO_SEASON_KEY = "taberna_smash_elo_season_start_v1";
+
+// Elo config
+const ELO_START = 1000;
+const ELO_K = 32;
 
 const PLAYERS: Player[] = [
   { id: "meliodas", tag: "Meliodas" },
@@ -38,6 +43,14 @@ function uniq(arr: string[]) {
   return Array.from(new Set(arr));
 }
 
+function expectedScore(rA: number, rB: number) {
+  return 1 / (1 + Math.pow(10, (rB - rA) / 400));
+}
+
+function roundElo(n: number) {
+  return Math.round(n);
+}
+
 export default function Page() {
   // selections
   const [a1, setA1] = useState(PLAYERS[0]?.id ?? "");
@@ -45,11 +58,14 @@ export default function Page() {
   const [b1, setB1] = useState(PLAYERS[2]?.id ?? "");
   const [b2, setB2] = useState(PLAYERS[3]?.id ?? "");
   const [score, setScore] = useState<"2-0" | "2-1" | "1-2" | "0-2">("2-0");
-  const [msg, setMsg] = useState<string>("");
 
+  const [msg, setMsg] = useState<string>("");
   const [sets, setSets] = useState<SetRow[]>([]);
 
-  // load from localStorage
+  // Elo season start (if set, Elo is calculated only from sets >= this timestamp)
+  const [eloSeasonStart, setEloSeasonStart] = useState<string | null>(null);
+
+  // load sets from localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -61,7 +77,7 @@ export default function Page() {
     }
   }, []);
 
-  // save to localStorage
+  // save sets to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
@@ -69,6 +85,28 @@ export default function Page() {
       // ignore
     }
   }, [sets]);
+
+  // load Elo season start
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ELO_SEASON_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "string") setEloSeasonStart(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // save Elo season start
+  useEffect(() => {
+    try {
+      if (eloSeasonStart) localStorage.setItem(ELO_SEASON_KEY, JSON.stringify(eloSeasonStart));
+      else localStorage.removeItem(ELO_SEASON_KEY);
+    } catch {
+      // ignore
+    }
+  }, [eloSeasonStart]);
 
   const idToTag = useMemo(() => {
     const m = new Map<string, string>();
@@ -112,7 +150,7 @@ export default function Page() {
 
     setSets((prev) => [row, ...prev]);
     setMsg("Set guardado ✅");
-    setTimeout(() => setMsg(""), 1500);
+    setTimeout(() => setMsg(""), 1200);
   }
 
   function undoLast() {
@@ -124,31 +162,38 @@ export default function Page() {
     if (!confirm("¿Borrar todo el historial?")) return;
     setSets([]);
     setMsg("Historial borrado.");
-    setTimeout(() => setMsg(""), 1500);
+    setTimeout(() => setMsg(""), 1200);
   }
 
-  const playerStats = useMemo(() => {
-    // per player: setsPlayed, setsWon, winRate
-    const stats: Record<
-      string,
-      { tag: string; setsPlayed: number; setsWon: number; winRate: number }
-    > = {};
+  function resetEloSeason() {
+    // No borra historial, solo reinicia Elo desde “ahora”
+    if (!confirm("¿Iniciar nueva temporada Elo desde ahora? (no borra historial)")) return;
+    setEloSeasonStart(new Date().toISOString());
+    setMsg("Temporada Elo reiniciada ✅");
+    setTimeout(() => setMsg(""), 1200);
+  }
 
-    for (const p of PLAYERS) {
-      stats[p.id] = { tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0 };
-    }
+  function resetEloSeasonToAllTime() {
+    if (!confirm("¿Volver Elo a calcularse con TODO el historial?")) return;
+    setEloSeasonStart(null);
+    setMsg("Elo volverá a usar todo el historial.");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  // Winrate por jugador
+  const playerStats = useMemo(() => {
+    const stats: Record<string, { tag: string; setsPlayed: number; setsWon: number; winRate: number }> =
+      Object.fromEntries(PLAYERS.map((p) => [p.id, { tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0 }]));
 
     for (const s of sets) {
-      const teamA = [s.a1, s.a2];
-      const teamB = [s.b1, s.b2];
       const aWon = s.aGames > s.bGames;
 
-      for (const id of teamA) {
+      for (const id of [s.a1, s.a2]) {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (aWon) stats[id].setsWon += 1;
       }
-      for (const id of teamB) {
+      for (const id of [s.b1, s.b2]) {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (!aWon) stats[id].setsWon += 1;
@@ -160,16 +205,13 @@ export default function Page() {
       x.winRate = x.setsPlayed ? x.setsWon / x.setsPlayed : 0;
     }
 
-    return Object.values(stats).sort((a, b) => b.winRate - a.winRate);
+    return Object.values(stats).sort((a, b) => b.winRate - a.winRate || b.setsPlayed - a.setsPlayed);
   }, [sets]);
 
+  // Winrate por dúo
   const teamStats = useMemo(() => {
-    // exact duo pairing stats
-    type DuoKey = string; // "a|b" (sorted)
-    const m = new Map<
-      DuoKey,
-      { duo: string; played: number; won: number; winRate: number }
-    >();
+    type DuoKey = string; // "a|b" sorted
+    const m = new Map<DuoKey, { duo: string; played: number; won: number; winRate: number }>();
 
     function keyOf(p1: string, p2: string) {
       return [p1, p2].sort().join("|");
@@ -182,14 +224,24 @@ export default function Page() {
 
       const aObj =
         m.get(aKey) ??
-        { duo: `${idToTag.get(s.a1)} + ${idToTag.get(s.a2)}`, played: 0, won: 0, winRate: 0 };
+        {
+          duo: `${idToTag.get(s.a1) ?? s.a1} + ${idToTag.get(s.a2) ?? s.a2}`,
+          played: 0,
+          won: 0,
+          winRate: 0,
+        };
       aObj.played += 1;
       if (aWon) aObj.won += 1;
       m.set(aKey, aObj);
 
       const bObj =
         m.get(bKey) ??
-        { duo: `${idToTag.get(s.b1)} + ${idToTag.get(s.b2)}`, played: 0, won: 0, winRate: 0 };
+        {
+          duo: `${idToTag.get(s.b1) ?? s.b1} + ${idToTag.get(s.b2) ?? s.b2}`,
+          played: 0,
+          won: 0,
+          winRate: 0,
+        };
       bObj.played += 1;
       if (!aWon) bObj.won += 1;
       m.set(bKey, bObj);
@@ -198,8 +250,55 @@ export default function Page() {
     const arr = Array.from(m.values());
     for (const o of arr) o.winRate = o.played ? o.won / o.played : 0;
 
-    return arr.sort((a, b) => b.winRate - a.winRate);
+    return arr.sort((a, b) => b.winRate - a.winRate || b.played - a.played);
   }, [sets, idToTag]);
+
+  // Elo computed from (filtered) history — robust (undo works automatically)
+  const eloMap = useMemo(() => {
+    const elo: Record<string, number> = {};
+    for (const p of PLAYERS) elo[p.id] = ELO_START;
+
+    const seasonStartMs = eloSeasonStart ? new Date(eloSeasonStart).getTime() : null;
+
+    // Apply in chronological order (oldest -> newest)
+    const chronological = [...sets].sort(
+      (x, y) => new Date(x.createdAt).getTime() - new Date(y.createdAt).getTime()
+    );
+
+    for (const s of chronological) {
+      const t = new Date(s.createdAt).getTime();
+      if (seasonStartMs !== null && t < seasonStartMs) continue;
+
+      const aWon = s.aGames > s.bGames;
+
+      const rA1 = elo[s.a1] ?? ELO_START;
+      const rA2 = elo[s.a2] ?? ELO_START;
+      const rB1 = elo[s.b1] ?? ELO_START;
+      const rB2 = elo[s.b2] ?? ELO_START;
+
+      const teamA = (rA1 + rA2) / 2;
+      const teamB = (rB1 + rB2) / 2;
+
+      const expA = expectedScore(teamA, teamB);
+      const scoreA = aWon ? 1 : 0;
+
+      const deltaA = ELO_K * (scoreA - expA);
+      const share = deltaA / 2;
+
+      elo[s.a1] = roundElo((elo[s.a1] ?? ELO_START) + share);
+      elo[s.a2] = roundElo((elo[s.a2] ?? ELO_START) + share);
+      elo[s.b1] = roundElo((elo[s.b1] ?? ELO_START) - share);
+      elo[s.b2] = roundElo((elo[s.b2] ?? ELO_START) - share);
+    }
+
+    return elo;
+  }, [sets, eloSeasonStart]);
+
+  const eloRanking = useMemo(() => {
+    return [...PLAYERS]
+      .map((p) => ({ id: p.id, tag: p.tag, elo: eloMap[p.id] ?? ELO_START }))
+      .sort((a, b) => b.elo - a.elo);
+  }, [eloMap]);
 
   const playerOptions = PLAYERS.map((p) => (
     <option key={p.id} value={p.id}>
@@ -207,27 +306,47 @@ export default function Page() {
     </option>
   ));
 
+  const eloSeasonLabel = useMemo(() => {
+    if (!eloSeasonStart) return "Elo: usando todo el historial";
+    return `Elo: temporada desde ${fmtDate(eloSeasonStart)}`;
+  }, [eloSeasonStart]);
+
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-4">
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold">Taberna Smash 2026</h1>
-            <p className="text-zinc-400">2v2 · Sets BO3 · Winrate por jugador y por dúo</p>
+            <p className="text-zinc-400">2v2 · Sets BO3 · Winrate + Elo por jugador</p>
+            <p className="text-xs text-zinc-500 mt-1">{eloSeasonLabel} · K={ELO_K} · base {ELO_START}</p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={undoLast}
-              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-40"
               disabled={sets.length === 0}
               title="Deshacer último set"
             >
               Undo
             </button>
             <button
+              onClick={resetEloSeason}
+              className="px-3 py-2 rounded-lg bg-indigo-900/60 hover:bg-indigo-900 text-sm"
+              title="Iniciar nueva temporada Elo desde ahora"
+            >
+              Reset Elo (Temporada)
+            </button>
+            <button
+              onClick={resetEloSeasonToAllTime}
+              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+              title="Volver a calcular Elo con todo el historial"
+            >
+              Elo: Todo
+            </button>
+            <button
               onClick={clearAll}
-              className="px-3 py-2 rounded-lg bg-red-900/60 hover:bg-red-900 text-sm"
+              className="px-3 py-2 rounded-lg bg-red-900/60 hover:bg-red-900 text-sm disabled:opacity-40"
               disabled={sets.length === 0}
               title="Borrar todo"
             >
@@ -331,6 +450,22 @@ export default function Page() {
           {/* Stats */}
           <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 lg:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Elo */}
+              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
+                <h3 className="font-semibold mb-2">Ranking Elo (jugadores)</h3>
+                <div className="space-y-2">
+                  {eloRanking.map((p, idx) => (
+                    <div key={p.id} className="flex items-center justify-between">
+                      <div className="font-medium">
+                        #{idx + 1} {p.tag}
+                      </div>
+                      <div className="text-sm text-zinc-300 tabular-nums">{p.elo}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-zinc-500 mt-2">{eloSeasonLabel}</div>
+              </div>
+
               {/* Winrate players */}
               <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
                 <h3 className="font-semibold mb-2">Winrate por jugador</h3>
@@ -347,13 +482,13 @@ export default function Page() {
               </div>
 
               {/* Winrate duos */}
-              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
+              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3 md:col-span-2">
                 <h3 className="font-semibold mb-2">Winrate por dúo</h3>
                 {teamStats.length === 0 ? (
                   <div className="text-sm text-zinc-500">Aún no hay dúos registrados.</div>
                 ) : (
                   <div className="space-y-2">
-                    {teamStats.slice(0, 10).map((d) => (
+                    {teamStats.slice(0, 12).map((d) => (
                       <div key={d.duo} className="flex items-center justify-between">
                         <div className="font-medium">{d.duo}</div>
                         <div className="text-sm text-zinc-300 tabular-nums">
@@ -361,10 +496,8 @@ export default function Page() {
                         </div>
                       </div>
                     ))}
-                    {teamStats.length > 10 && (
-                      <div className="text-xs text-zinc-500">
-                        Mostrando top 10 (hay {teamStats.length} dúos).
-                      </div>
+                    {teamStats.length > 12 && (
+                      <div className="text-xs text-zinc-500">Mostrando top 12 (hay {teamStats.length} dúos).</div>
                     )}
                   </div>
                 )}
@@ -377,10 +510,10 @@ export default function Page() {
                   <div className="text-sm text-zinc-500">Aún no has guardado sets.</div>
                 ) : (
                   <div className="divide-y divide-zinc-800">
-                    {sets.slice(0, 25).map((s) => {
+                    {sets.slice(0, 30).map((s) => {
                       const aWon = s.aGames > s.bGames;
-                      const aNames = `${idToTag.get(s.a1)} + ${idToTag.get(s.a2)}`;
-                      const bNames = `${idToTag.get(s.b1)} + ${idToTag.get(s.b2)}`;
+                      const aNames = `${idToTag.get(s.a1) ?? s.a1} + ${idToTag.get(s.a2) ?? s.a2}`;
+                      const bNames = `${idToTag.get(s.b1) ?? s.b1} + ${idToTag.get(s.b2) ?? s.b2}`;
                       return (
                         <div key={s.id} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                           <div className="text-sm">
@@ -401,10 +534,8 @@ export default function Page() {
                         </div>
                       );
                     })}
-                    {sets.length > 25 && (
-                      <div className="pt-2 text-xs text-zinc-500">
-                        Mostrando últimos 25 (hay {sets.length} sets).
-                      </div>
+                    {sets.length > 30 && (
+                      <div className="pt-2 text-xs text-zinc-500">Mostrando últimos 30 (hay {sets.length} sets).</div>
                     )}
                   </div>
                 )}
