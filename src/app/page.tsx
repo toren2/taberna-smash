@@ -15,16 +15,21 @@ type SetRow = {
 };
 
 const PLAYERS: Player[] = [
-  { id: "p1", tag: "Josip" },
-  { id: "p2", tag: "Alex" },
-  { id: "p3", tag: "Leo" },
-  { id: "p4", tag: "Maui" },
-  { id: "p5", tag: "Gabo" },
-  { id: "p6", tag: "Dani" },
+  { id: "p1", tag: "Meliodas" },
+  { id: "p2", tag: "Zenaku" },
+  { id: "p3", tag: "Viola" },
+  { id: "p4", tag: "Mono" },
+  { id: "p5", tag: "Pampara" },
+  { id: "p6", tag: "Chapfra" },
 ];
 
 function pct(x: number) {
   return `${Math.round(x * 1000) / 10}%`;
+}
+
+// id simple (evita issues con crypto)
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export default function Page() {
@@ -43,8 +48,7 @@ export default function Page() {
 
   function validateUnique() {
     const ids = [a1, a2, b1, b2].filter(Boolean);
-    const s = new Set(ids);
-    return s.size === ids.length;
+    return new Set(ids).size === ids.length;
   }
 
   function addSet(aGames: number, bGames: number) {
@@ -59,7 +63,7 @@ export default function Page() {
     if (!validBO3) return setMsg("Score BO3 inválido.");
 
     const row: SetRow = {
-      id: crypto.randomUUID(),
+      id: makeId(),
       a1,
       a2,
       b1,
@@ -77,7 +81,6 @@ export default function Page() {
     setSets((prev) => prev.slice(1));
   }
 
-  // Stats por jugador (wins/losses por set)
   const playerStats = useMemo(() => {
     const agg = new Map<string, { wins: number; losses: number }>();
 
@@ -111,10 +114,8 @@ export default function Page() {
       .sort((a, b) => b.winrate - a.winrate || b.total - a.total);
   }, [sets, minSets, tagById]);
 
-  // Stats por team (dúo exacto)
   const teamStats = useMemo(() => {
     const agg = new Map<string, { wins: number; losses: number }>();
-
     const teamKey = (x: string, y: string) => [x, y].sort().join("+");
 
     function addWL(key: string, w: number, l: number) {
@@ -126,10 +127,8 @@ export default function Page() {
 
     for (const s of sets) {
       const aWin = s.aGames > s.bGames;
-      const aKey = teamKey(s.a1, s.a2);
-      const bKey = teamKey(s.b1, s.b2);
-      addWL(aKey, aWin ? 1 : 0, aWin ? 0 : 1);
-      addWL(bKey, aWin ? 0 : 1, aWin ? 1 : 0);
+      addWL(teamKey(s.a1, s.a2), aWin ? 1 : 0, aWin ? 0 : 1);
+      addWL(teamKey(s.b1, s.b2), aWin ? 0 : 1, aWin ? 1 : 0);
     }
 
     const rows = [...agg.entries()].map(([key, v]) => {
@@ -151,7 +150,13 @@ export default function Page() {
       .sort((a, b) => b.winrate - a.winrate || b.total - a.total);
   }, [sets, minSets, tagById]);
 
-  const select = (value: string, onChange: (v: string) => void) => (
+  const Select = ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+  }) => (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -183,44 +188,28 @@ export default function Page() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-xl border p-3 space-y-2">
             <div className="font-semibold">Team A</div>
-            {select(a1, setA1)}
-            {select(a2, setA2)}
+            <Select value={a1} onChange={setA1} />
+            <Select value={a2} onChange={setA2} />
           </div>
 
           <div className="rounded-xl border p-3 space-y-2">
             <div className="font-semibold">Team B</div>
-            {select(b1, setB1)}
-            {select(b2, setB2)}
+            <Select value={b1} onChange={setB1} />
+            <Select value={b2} onChange={setB2} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <button
-            className="rounded-xl border px-3 py-3 font-bold"
-            disabled={!allSelected}
-            onClick={() => addSet(2, 0)}
-          >
+          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(2, 0)}>
             A 2–0
           </button>
-          <button
-            className="rounded-xl border px-3 py-3 font-bold"
-            disabled={!allSelected}
-            onClick={() => addSet(2, 1)}
-          >
+          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(2, 1)}>
             A 2–1
           </button>
-          <button
-            className="rounded-xl border px-3 py-3 font-bold"
-            disabled={!allSelected}
-            onClick={() => addSet(1, 2)}
-          >
+          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(1, 2)}>
             B 2–1
           </button>
-          <button
-            className="rounded-xl border px-3 py-3 font-bold"
-            disabled={!allSelected}
-            onClick={() => addSet(0, 2)}
-          >
+          <button className="rounded-xl border px-3 py-3 font-bold" disabled={!allSelected} onClick={() => addSet(0, 2)}>
             B 2–0
           </button>
         </div>
@@ -252,16 +241,9 @@ export default function Page() {
           ) : (
             <div className="space-y-2">
               {playerStats.map((r, i) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between rounded-xl border px-3 py-2"
-                >
-                  <div className="font-semibold">
-                    #{i + 1} {r.tag}
-                  </div>
-                  <div className="text-sm">
-                    {r.wins}-{r.losses} · {pct(r.winrate)}
-                  </div>
+                <div key={r.id} className="flex items-center justify-between rounded-xl border px-3 py-2">
+                  <div className="font-semibold">#{i + 1} {r.tag}</div>
+                  <div className="text-sm">{r.wins}-{r.losses} · {pct(r.winrate)}</div>
                 </div>
               ))}
             </div>
@@ -275,16 +257,9 @@ export default function Page() {
           ) : (
             <div className="space-y-2">
               {teamStats.map((r, i) => (
-                <div
-                  key={r.key}
-                  className="flex items-center justify-between rounded-xl border px-3 py-2"
-                >
-                  <div className="font-semibold">
-                    #{i + 1} {r.name}
-                  </div>
-                  <div className="text-sm">
-                    {r.wins}-{r.losses} · {pct(r.winrate)}
-                  </div>
+                <div key={r.key} className="flex items-center justify-between rounded-xl border px-3 py-2">
+                  <div className="font-semibold">#{i + 1} {r.name}</div>
+                  <div className="text-sm">{r.wins}-{r.losses} · {pct(r.winrate)}</div>
                 </div>
               ))}
             </div>
@@ -302,16 +277,9 @@ export default function Page() {
               const a = `${tagById.get(s.a1)}+${tagById.get(s.a2)}`;
               const b = `${tagById.get(s.b1)}+${tagById.get(s.b2)}`;
               return (
-                <div
-                  key={s.id}
-                  className="rounded-xl border px-3 py-2 text-sm flex items-center justify-between"
-                >
-                  <div>
-                    {a} <span className="opacity-60">vs</span> {b}
-                  </div>
-                  <div className="font-semibold">
-                    {s.aGames}-{s.bGames}
-                  </div>
+                <div key={s.id} className="rounded-xl border px-3 py-2 text-sm flex items-center justify-between">
+                  <div>{a} <span className="opacity-60">vs</span> {b}</div>
+                  <div className="font-semibold">{s.aGames}-{s.bGames}</div>
                 </div>
               );
             })}
