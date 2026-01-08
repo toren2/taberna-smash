@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type Player = { id: string; tag: string };
 
+type KD = { kills: number; deaths: number };
+
 type SetRow = {
   id: string;
   a1: string;
@@ -13,6 +15,8 @@ type SetRow = {
   aGames: number;
   bGames: number;
   createdAt: string; // ISO
+  // NEW: K/D por jugador (por set completo)
+  stats?: Record<string, KD>; // playerId -> {kills,deaths}
 };
 
 const STORAGE_KEY = "taberna_smash_sets_v1";
@@ -51,6 +55,15 @@ function roundElo(n: number) {
   return Math.round(n);
 }
 
+function clampInt(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
+function kdDefault(): KD {
+  return { kills: 0, deaths: 0 };
+}
+
 export default function Page() {
   // selections
   const [a1, setA1] = useState(PLAYERS[0]?.id ?? "");
@@ -59,19 +72,138 @@ export default function Page() {
   const [b2, setB2] = useState(PLAYERS[3]?.id ?? "");
   const [score, setScore] = useState<"2-0" | "2-1" | "1-2" | "0-2">("2-0");
 
+  // NEW: inputs de kills/deaths por jugador (para el set actual)
+  const [kdInputs, setKdInputs] = useState<Record<string, KD>>({});
+
   const [msg, setMsg] = useState<string>("");
   const [sets, setSets] = useState<SetRow[]>([]);
 
   // Elo season start (if set, Elo is calculated only from sets >= this timestamp)
   const [eloSeasonStart, setEloSeasonStart] = useState<string | null>(null);
 
-  // load sets from localStorage
+  const idToTag = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of PLAYERS) m.set(p.id, p.tag);
+    return m;
+  }, []);
+
+  const selectedIds = useMemo(() => [a1, a2, b1, b2], [a1, a2, b1, b2]);
+
+  // Mantener kdInputs siempre listo para los 4 seleccionados
+  useEffect(() => {
+    setKdInputs((prev) => {
+      const next = { ...prev };
+      for (const id of selectedIds) {
+        if (!id) continue;
+        if (!next[id]) next[id] = kdDefault();
+        // normaliza por si venían cosas raras
+        next[id] = { kills: clampInt(next[id].kills), deaths: clampInt(next[id].deaths) };
+      }
+      return next;
+    });
+  }, [selectedIds.join("|")]);
+
+  const selectionError = useMemo(() => {
+    if (selectedIds.some((x) => !x)) return "Faltan jugadores por seleccionar.";
+    if (uniq(selectedIds).length !== 4) return "No se puede repetir jugador en el mismo set.";
+    return "";
+  }, [selectedIds]);
+
+  function parseScore(s: "2-0" | "2-1" | "1-2" | "0-2") {
+    if (s === "2-0") return { aGames: 2, bGames: 0 };
+    if (s === "2-1") return { aGames: 2, bGames: 1 };
+    if (s === "1-2") return { aGames: 1, bGames: 2 };
+    return { aGames: 0, bGames: 2 };
+  }
+
+  function setKd(id: string, field: "kills" | "deaths", value: string) {
+    const n = clampInt(Number(value));
+    setKdInputs((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? kdDefault()), [field]: n },
+    }));
+  }
+
+  function addSet() {
+    if (selectionError) {
+      setMsg(selectionError);
+      return;
+    }
+
+    const { aGames, bGames } = parseScore(score);
+
+    // Construye stats SOLO para los 4 del set
+    const stats: Record<string, KD> = {};
+    for (const id of selectedIds) {
+      stats[id] = {
+        kills: clampInt(kdInputs[id]?.kills ?? 0),
+        deaths: clampInt(kdInputs[id]?.deaths ?? 0),
+      };
+    }
+
+    const row: SetRow = {
+      id: crypto.randomUUID(),
+      a1,
+      a2,
+      b1,
+      b2,
+      aGames,
+      bGames,
+      createdAt: new Date().toISOString(),
+      stats,
+    };
+
+    setSets((prev) => [row, ...prev]);
+    setMsg("Set guardado ✅");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  function undoLast() {
+    setMsg("");
+    setSets((prev) => prev.slice(1));
+  }
+
+  function clearAll() {
+    if (!confirm("¿Borrar todo el historial?")) return;
+    setSets([]);
+    setMsg("Historial borrado.");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  function resetEloSeason() {
+    // No borra historial, solo reinicia Elo desde “ahora”
+    if (!confirm("¿Iniciar nueva temporada Elo desde ahora? (no borra historial)")) return;
+    setEloSeasonStart(new Date().toISOString());
+    setMsg("Temporada Elo reiniciada ✅");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  function resetEloSeasonToAllTime() {
+    if (!confirm("¿Volver Elo a calcularse con TODO el historial?")) return;
+    setEloSeasonStart(null);
+    setMsg("Elo volverá a usar todo el historial.");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  // load sets from localStorage (con migración suave para stats)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as SetRow[];
-      if (Array.isArray(parsed)) setSets(parsed);
+      if (!Array.isArray(parsed)) return;
+
+      const migrated = parsed.map((s) => {
+        const ids = [s.a1, s.a2, s.b1, s.b2].filter(Boolean);
+        const stats = { ...(s.stats ?? {}) } as Record<string, KD>;
+        for (const id of ids) {
+          const cur = stats[id] ?? kdDefault();
+          stats[id] = { kills: clampInt(cur.kills), deaths: clampInt(cur.deaths) };
+        }
+        return { ...s, stats };
+      });
+
+      setSets(migrated);
     } catch {
       // ignore
     }
@@ -108,82 +240,32 @@ export default function Page() {
     }
   }, [eloSeasonStart]);
 
-  const idToTag = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of PLAYERS) m.set(p.id, p.tag);
-    return m;
-  }, []);
-
-  const selectedIds = useMemo(() => [a1, a2, b1, b2], [a1, a2, b1, b2]);
-
-  const selectionError = useMemo(() => {
-    if (selectedIds.some((x) => !x)) return "Faltan jugadores por seleccionar.";
-    if (uniq(selectedIds).length !== 4) return "No se puede repetir jugador en el mismo set.";
-    return "";
-  }, [selectedIds]);
-
-  function parseScore(s: "2-0" | "2-1" | "1-2" | "0-2") {
-    if (s === "2-0") return { aGames: 2, bGames: 0 };
-    if (s === "2-1") return { aGames: 2, bGames: 1 };
-    if (s === "1-2") return { aGames: 1, bGames: 2 };
-    return { aGames: 0, bGames: 2 };
+  // Helper: obtener KD del set para un jugador
+  function getKD(s: SetRow, id: string): KD {
+    const kd = s.stats?.[id];
+    if (!kd) return kdDefault();
+    return { kills: clampInt(kd.kills), deaths: clampInt(kd.deaths) };
   }
 
-  function addSet() {
-    if (selectionError) {
-      setMsg(selectionError);
-      return;
-    }
-
-    const { aGames, bGames } = parseScore(score);
-
-    const row: SetRow = {
-      id: crypto.randomUUID(),
-      a1,
-      a2,
-      b1,
-      b2,
-      aGames,
-      bGames,
-      createdAt: new Date().toISOString(),
-    };
-
-    setSets((prev) => [row, ...prev]);
-    setMsg("Set guardado ✅");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  function undoLast() {
-    setMsg("");
-    setSets((prev) => prev.slice(1));
-  }
-
-  function clearAll() {
-    if (!confirm("¿Borrar todo el historial?")) return;
-    setSets([]);
-    setMsg("Historial borrado.");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  function resetEloSeason() {
-    // No borra historial, solo reinicia Elo desde “ahora”
-    if (!confirm("¿Iniciar nueva temporada Elo desde ahora? (no borra historial)")) return;
-    setEloSeasonStart(new Date().toISOString());
-    setMsg("Temporada Elo reiniciada ✅");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  function resetEloSeasonToAllTime() {
-    if (!confirm("¿Volver Elo a calcularse con TODO el historial?")) return;
-    setEloSeasonStart(null);
-    setMsg("Elo volverá a usar todo el historial.");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  // Winrate por jugador
+  // Winrate + KD por jugador
   const playerStats = useMemo(() => {
-    const stats: Record<string, { tag: string; setsPlayed: number; setsWon: number; winRate: number }> =
-      Object.fromEntries(PLAYERS.map((p) => [p.id, { tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0 }]));
+    const stats: Record<
+      string,
+      {
+        tag: string;
+        setsPlayed: number;
+        setsWon: number;
+        winRate: number;
+        kills: number;
+        deaths: number;
+        diff: number;
+      }
+    > = Object.fromEntries(
+      PLAYERS.map((p) => [
+        p.id,
+        { tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0, kills: 0, deaths: 0, diff: 0 },
+      ])
+    );
 
     for (const s of sets) {
       const aWon = s.aGames > s.bGames;
@@ -192,20 +274,32 @@ export default function Page() {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (aWon) stats[id].setsWon += 1;
+
+        const kd = getKD(s, id);
+        stats[id].kills += kd.kills;
+        stats[id].deaths += kd.deaths;
       }
       for (const id of [s.b1, s.b2]) {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (!aWon) stats[id].setsWon += 1;
+
+        const kd = getKD(s, id);
+        stats[id].kills += kd.kills;
+        stats[id].deaths += kd.deaths;
       }
     }
 
     for (const id of Object.keys(stats)) {
       const x = stats[id];
       x.winRate = x.setsPlayed ? x.setsWon / x.setsPlayed : 0;
+      x.diff = x.kills - x.deaths;
     }
 
-    return Object.values(stats).sort((a, b) => b.winRate - a.winRate || b.setsPlayed - a.setsPlayed);
+    // Orden: winrate desc, diff desc, setsPlayed desc
+    return Object.values(stats).sort(
+      (a, b) => b.winRate - a.winRate || b.diff - a.diff || b.setsPlayed - a.setsPlayed
+    );
   }, [sets]);
 
   // Winrate por dúo
@@ -433,6 +527,56 @@ export default function Page() {
                 </div>
               </div>
 
+              {/* NEW: Kills/Deaths */}
+              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
+                <div className="text-sm font-semibold mb-2">Kills / Deaths (por set)</div>
+
+                <div className="space-y-2">
+                  {selectedIds.map((id) => {
+                    const tag = idToTag.get(id) ?? id;
+                    const kd = kdInputs[id] ?? kdDefault();
+                    const diff = (kd.kills ?? 0) - (kd.deaths ?? 0);
+                    const diffLabel = diff >= 0 ? `+${diff}` : `${diff}`;
+
+                    return (
+                      <div
+                        key={id}
+                        className="grid grid-cols-12 gap-2 items-center"
+                      >
+                        <div className="col-span-5 text-sm font-medium truncate">
+                          {tag} <span className="text-xs text-zinc-500">({diffLabel})</span>
+                        </div>
+
+                        <div className="col-span-3">
+                          <input
+                            type="number"
+                            min={0}
+                            value={kd.kills}
+                            onChange={(e) => setKd(id, "kills", e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-sm"
+                            placeholder="Kills"
+                          />
+                        </div>
+
+                        <div className="col-span-3">
+                          <input
+                            type="number"
+                            min={0}
+                            value={kd.deaths}
+                            onChange={(e) => setKd(id, "deaths", e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-sm"
+                            placeholder="Deaths"
+                          />
+                        </div>
+
+                        <div className="col-span-1 text-xs text-zinc-500 text-right">K/D</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+              </div>
+
               <button
                 onClick={addSet}
                 className="w-full py-3 rounded-xl bg-emerald-500 text-zinc-950 font-bold hover:bg-emerald-400 disabled:opacity-40"
@@ -441,9 +585,7 @@ export default function Page() {
                 Guardar set
               </button>
 
-              <div className="text-xs text-zinc-500">
-                Guardado local (este dispositivo). Luego lo hacemos multiusuario si quieres.
-              </div>
+  
             </div>
           </div>
 
@@ -466,18 +608,28 @@ export default function Page() {
                 <div className="text-xs text-zinc-500 mt-2">{eloSeasonLabel}</div>
               </div>
 
-              {/* Winrate players */}
+              {/* Winrate players + KD */}
               <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
-                <h3 className="font-semibold mb-2">Winrate por jugador</h3>
+                <h3 className="font-semibold mb-2">Winrate + K/D por jugador</h3>
                 <div className="space-y-2">
-                  {playerStats.map((p) => (
-                    <div key={p.tag} className="flex items-center justify-between">
-                      <div className="font-medium">{p.tag}</div>
-                      <div className="text-sm text-zinc-300 tabular-nums">
-                        {p.setsWon}/{p.setsPlayed} · {(p.winRate * 100).toFixed(0)}%
+                  {playerStats.map((p) => {
+                    const diffLabel = p.diff >= 0 ? `+${p.diff}` : `${p.diff}`;
+                    return (
+                      <div key={p.tag} className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{p.tag}</div>
+                        <div className="text-sm text-zinc-300 tabular-nums text-right">
+                          {p.setsWon}/{p.setsPlayed} · {(p.winRate * 100).toFixed(0)}%{" "}
+                          <span className="text-zinc-500">·</span>{" "}
+                          <span className="text-zinc-200">
+                            {p.kills}/{p.deaths} ({diffLabel})
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                </div>
+                <div className="text-xs text-zinc-500 mt-2">
+                  K/D y diferencial son acumulados (por set completo).
                 </div>
               </div>
 
@@ -514,22 +666,36 @@ export default function Page() {
                       const aWon = s.aGames > s.bGames;
                       const aNames = `${idToTag.get(s.a1) ?? s.a1} + ${idToTag.get(s.a2) ?? s.a2}`;
                       const bNames = `${idToTag.get(s.b1) ?? s.b1} + ${idToTag.get(s.b2) ?? s.b2}`;
+
+                      // resumen de diff por jugador
+                      const ids = [s.a1, s.a2, s.b1, s.b2];
+                      const diffParts = ids.map((id) => {
+                        const kd = getKD(s, id);
+                        const d = kd.kills - kd.deaths;
+                        const dLabel = d >= 0 ? `+${d}` : `${d}`;
+                        return `${idToTag.get(id) ?? id}:${dLabel}`;
+                      });
+
                       return (
-                        <div key={s.id} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                          <div className="text-sm">
-                            <span className={aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
-                              {aNames}
-                            </span>{" "}
-                            <span className="text-zinc-500">vs</span>{" "}
-                            <span className={!aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
-                              {bNames}
-                            </span>
+                        <div key={s.id} className="py-2 flex flex-col gap-1">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                            <div className="text-sm">
+                              <span className={aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
+                                {aNames}
+                              </span>{" "}
+                              <span className="text-zinc-500">vs</span>{" "}
+                              <span className={!aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
+                                {bNames}
+                              </span>
+                            </div>
+                            <div className="text-xs text-zinc-400 tabular-nums flex gap-3">
+                              <span className="font-semibold text-zinc-200">{s.aGames}-{s.bGames}</span>
+                              <span>{fmtDate(s.createdAt)}</span>
+                            </div>
                           </div>
-                          <div className="text-xs text-zinc-400 tabular-nums flex gap-3">
-                            <span className="font-semibold text-zinc-200">
-                              {s.aGames}-{s.bGames}
-                            </span>
-                            <span>{fmtDate(s.createdAt)}</span>
+
+                          <div className="text-xs text-zinc-500">
+                            Diffs: {diffParts.join(" · ")}
                           </div>
                         </div>
                       );
