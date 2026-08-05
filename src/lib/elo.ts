@@ -34,7 +34,7 @@ export function computeEloMap(
   return elo;
 }
 
-function applySetToElo(elo: Record<string, number>, s: SetRow) {
+export function applySetToElo(elo: Record<string, number>, s: SetRow) {
   const aWon = s.a_games > s.b_games;
 
   const rA1 = elo[s.a1] ?? ELO_START;

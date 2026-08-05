@@ -5,6 +5,7 @@ export type H2HCell = {
   asOpponent: { played: number; won: number };
   asTeammate: { played: number; won: number };
 };
+export type CharacterStat = { character: string; played: number; won: number; winRate: number };
 
 export type PlayerFullStats = {
   id: string;
@@ -25,6 +26,8 @@ export type PlayerFullStats = {
   bestDuo: MatchupInfo | null;
   worstDuo: MatchupInfo | null;
   headToHead: Record<string, H2HCell>;
+  favoriteCharacter: CharacterStat | null;
+  bestCharacter: CharacterStat | null;
 };
 
 const MIN_GAMES_FOR_MATCHUP = 2;
@@ -53,6 +56,7 @@ export function computePlayerFullStats(
     const rivalStats = new Map<string, { played: number; won: number }>();
     const duoStats = new Map<string, { played: number; won: number }>();
     const headToHead = new Map<string, H2HCell>();
+    const charStats = new Map<string, { played: number; won: number }>();
 
     const resultsInOrder: ("W" | "L")[] = [];
 
@@ -73,6 +77,13 @@ export function computePlayerFullStats(
       const kd = s.stats?.[pid] ?? { kills: 0, deaths: 0 };
       kills += kd.kills ?? 0;
       deaths += kd.deaths ?? 0;
+
+      if (kd.character) {
+        const cs = charStats.get(kd.character) ?? { played: 0, won: 0 };
+        cs.played += 1;
+        if (won) cs.won += 1;
+        charStats.set(kd.character, cs);
+      }
 
       // duo (partner)
       const duo = duoStats.get(partnerId) ?? { played: 0, won: 0 };
@@ -147,6 +158,18 @@ export function computePlayerFullStats(
     const rivalList = toMatchupList(rivalStats).sort((a, b) => b.winRate - a.winRate || b.played - a.played);
     const duoList = toMatchupList(duoStats).sort((a, b) => b.winRate - a.winRate || b.played - a.played);
 
+    const charList: CharacterStat[] = Array.from(charStats.entries()).map(([character, v]) => ({
+      character,
+      played: v.played,
+      won: v.won,
+      winRate: v.played ? v.won / v.played : 0,
+    }));
+    const favoriteCharacter = [...charList].sort((a, b) => b.played - a.played)[0] ?? null;
+    const bestCharacter =
+      [...charList]
+        .filter((c) => c.played >= MIN_GAMES_FOR_MATCHUP)
+        .sort((a, b) => b.winRate - a.winRate || b.played - a.played)[0] ?? null;
+
     const h2hObj: Record<string, H2HCell> = {};
     for (const [id, cell] of headToHead.entries()) h2hObj[id] = cell;
 
@@ -169,6 +192,8 @@ export function computePlayerFullStats(
       bestDuo: duoList[0] ?? null,
       worstDuo: duoList[duoList.length - 1] ?? null,
       headToHead: h2hObj,
+      favoriteCharacter,
+      bestCharacter,
     };
   }
 

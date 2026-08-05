@@ -155,6 +155,33 @@ export function PlayerProfileModal({
           </div>
         </div>
 
+        {(stats.favoriteCharacter || stats.bestCharacter) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            <div className="rounded-xl border border-[var(--card-border)] p-3">
+              <div className="text-xs text-[var(--muted)] mb-1">Personaje favorito</div>
+              {stats.favoriteCharacter ? (
+                <div className="font-semibold">
+                  {stats.favoriteCharacter.character} — {stats.favoriteCharacter.played} set
+                  {stats.favoriteCharacter.played === 1 ? "" : "s"}
+                </div>
+              ) : (
+                <div className="text-sm text-[var(--muted)]">Sin datos.</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-[var(--card-border)] p-3">
+              <div className="text-xs text-[var(--muted)] mb-1">Mejor personaje</div>
+              {stats.bestCharacter ? (
+                <div className="font-semibold">
+                  {stats.bestCharacter.character} — {pct(stats.bestCharacter.winRate)} ({stats.bestCharacter.won}/
+                  {stats.bestCharacter.played})
+                </div>
+              ) : (
+                <div className="text-sm text-[var(--muted)]">Aún sin datos suficientes.</div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="rounded-xl border border-[var(--card-border)] p-3">
           <h3 className="font-semibold text-sm mb-2">Head-to-head</h3>
           {Object.keys(stats.headToHead).length === 0 ? (

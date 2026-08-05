@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Player, ScoreOption, clampInt, kdDefault } from "@/lib/types";
 import { Avatar } from "./Avatar";
+import { SMASH_CHARACTERS } from "@/lib/characters";
 
 function parseScore(s: ScoreOption) {
   if (s === "2-0") return { a_games: 2, b_games: 0 };
@@ -23,7 +24,7 @@ export function SetForm({
     b2: string;
     a_games: number;
     b_games: number;
-    stats: Record<string, { kills: number; deaths: number }>;
+    stats: Record<string, { kills: number; deaths: number; character?: string }>;
   }) => Promise<{ error: unknown }>;
 }) {
   const activePlayers = useMemo(() => players.filter((p) => p.active), [players]);
@@ -33,7 +34,7 @@ export function SetForm({
   const [b1, setB1] = useState("");
   const [b2, setB2] = useState("");
   const [score, setScore] = useState<ScoreOption>("2-0");
-  const [kdInputs, setKdInputs] = useState<Record<string, { kills: number; deaths: number }>>({});
+  const [kdInputs, setKdInputs] = useState<Record<string, { kills: number; deaths: number; character?: string }>>({});
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -72,17 +73,25 @@ export function SetForm({
     setKdInputs((prev) => ({ ...prev, [id]: { ...(prev[id] ?? kdDefault()), [field]: n } }));
   }
 
+  function setCharacter(id: string, character: string) {
+    setKdInputs((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? kdDefault()), character: character || undefined },
+    }));
+  }
+
   async function handleSubmit() {
     if (selectionError) {
       setMsg(selectionError);
       return;
     }
     const { a_games, b_games } = parseScore(score);
-    const stats: Record<string, { kills: number; deaths: number }> = {};
+    const stats: Record<string, { kills: number; deaths: number; character?: string }> = {};
     for (const id of selectedIds) {
       stats[id] = {
         kills: clampInt(kdInputs[id]?.kills ?? 0),
         deaths: clampInt(kdInputs[id]?.deaths ?? 0),
+        character: kdInputs[id]?.character || undefined,
       };
     }
     setSaving(true);
@@ -200,6 +209,20 @@ export function SetForm({
                     />
                   </div>
                   <div className="col-span-1 text-xs text-[var(--muted)] text-right">K/D</div>
+                  <div className="col-span-12">
+                    <select
+                      value={kd.character ?? ""}
+                      onChange={(e) => setCharacter(id, e.target.value)}
+                      className="w-full bg-transparent border border-[var(--card-border)] rounded-lg p-1.5 text-xs text-[var(--muted)]"
+                    >
+                      <option value="">Personaje (opcional)</option>
+                      {SMASH_CHARACTERS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               );
             })}

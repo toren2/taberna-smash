@@ -6,7 +6,7 @@ export type Player = {
   created_at: string;
 };
 
-export type KD = { kills: number; deaths: number };
+export type KD = { kills: number; deaths: number; character?: string };
 
 export type SetRow = {
   id: string;

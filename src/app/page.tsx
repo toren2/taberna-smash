@@ -10,6 +10,7 @@ import { EloChart } from "@/components/EloChart";
 import { History } from "@/components/History";
 import { HeadToHeadMatrix } from "@/components/HeadToHeadMatrix";
 import { BadgesRow } from "@/components/BadgesRow";
+import { NightlyMVP } from "@/components/NightlyMVP";
 import { PlayerProfileModal } from "@/components/PlayerProfileModal";
 import { DuoEntry, DuoStatsPanel, EloEntry, EloRanking, PlayerStatEntry, PlayerStatsPanel } from "@/components/Rankings";
 import { computeEloHistory, computeEloMap, ELO_K, ELO_START } from "@/lib/elo";
@@ -224,6 +225,12 @@ export default function Page() {
             <div className="rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] p-4 lg:col-span-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <BadgesRow badges={badges} players={players} onSelectPlayer={setSelectedPlayerId} />
+                <NightlyMVP
+                  players={players}
+                  sets={sets}
+                  eloSeasonStart={eloSeasonStart}
+                  onSelectPlayer={setSelectedPlayerId}
+                />
                 <EloRanking ranking={eloRanking} seasonLabel={eloSeasonLabel} onSelectPlayer={setSelectedPlayerId} />
                 <PlayerStatsPanel stats={playerStats} onSelectPlayer={setSelectedPlayerId} />
 
