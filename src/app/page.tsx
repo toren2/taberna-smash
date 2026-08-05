@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-type Player = { id: string; tag: string };
+type Player = { id: string; tag: string; avatar: string };
 
 type SetRow = {
   id: string;
@@ -18,20 +18,19 @@ type SetRow = {
 const STORAGE_KEY = "taberna_smash_sets_v1";
 const ELO_SEASON_KEY = "taberna_smash_elo_season_start_v1";
 
-// Elo config
 const ELO_START = 1000;
 const ELO_K = 32;
 
 const PLAYERS: Player[] = [
-  { id: "meliodas", tag: "Meliodas" },
-  { id: "zenaku", tag: "Zenaku" },
-  { id: "pampara", tag: "Pampara" },
-  { id: "mono", tag: "Mono" },
-  { id: "viola", tag: "Viola" },
-  { id: "chapfra", tag: "Chapfra" },
+  { id: "meliodas", tag: "Meliodas", avatar: "/meliodas.png" },
+  { id: "zenaku", tag: "Zenaku", avatar: "/zenaku.jpg" },
+  { id: "pampara", tag: "Pampara", avatar: "/pampara.png" },
+  { id: "mono", tag: "Mono", avatar: "/mono.jpg" },
+  { id: "viola", tag: "Viola", avatar: "/viola.jpg" },
+  { id: "chapfra", tag: "Chapfra", avatar: "/chapfra.jpg" },
 ];
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString();
   } catch {
@@ -39,33 +38,30 @@ function fmtDate(iso: string) {
   }
 }
 
-function uniq(arr: string[]) {
+function uniq(arr: string[]): string[] {
   return Array.from(new Set(arr));
 }
 
-function expectedScore(rA: number, rB: number) {
+function expectedScore(rA: number, rB: number): number {
   return 1 / (1 + Math.pow(10, (rB - rA) / 400));
 }
 
-function roundElo(n: number) {
+function roundElo(n: number): number {
   return Math.round(n);
 }
 
 export default function Page() {
-  // selections
-  const [a1, setA1] = useState(PLAYERS[0]?.id ?? "");
-  const [a2, setA2] = useState(PLAYERS[1]?.id ?? "");
-  const [b1, setB1] = useState(PLAYERS[2]?.id ?? "");
-  const [b2, setB2] = useState(PLAYERS[3]?.id ?? "");
+  const [a1, setA1] = useState<string>(PLAYERS[0]?.id ?? "");
+  const [a2, setA2] = useState<string>(PLAYERS[1]?.id ?? "");
+  const [b1, setB1] = useState<string>(PLAYERS[2]?.id ?? "");
+  const [b2, setB2] = useState<string>(PLAYERS[3]?.id ?? "");
   const [score, setScore] = useState<"2-0" | "2-1" | "1-2" | "0-2">("2-0");
 
   const [msg, setMsg] = useState<string>("");
   const [sets, setSets] = useState<SetRow[]>([]);
 
-  // Elo season start (if set, Elo is calculated only from sets >= this timestamp)
   const [eloSeasonStart, setEloSeasonStart] = useState<string | null>(null);
 
-  // load sets from localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -77,7 +73,6 @@ export default function Page() {
     }
   }, []);
 
-  // save sets to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
@@ -86,7 +81,6 @@ export default function Page() {
     }
   }, [sets]);
 
-  // load Elo season start
   useEffect(() => {
     try {
       const raw = localStorage.getItem(ELO_SEASON_KEY);
@@ -98,7 +92,6 @@ export default function Page() {
     }
   }, []);
 
-  // save Elo season start
   useEffect(() => {
     try {
       if (eloSeasonStart) localStorage.setItem(ELO_SEASON_KEY, JSON.stringify(eloSeasonStart));
@@ -108,16 +101,16 @@ export default function Page() {
     }
   }, [eloSeasonStart]);
 
-  const idToTag = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of PLAYERS) m.set(p.id, p.tag);
+  const idToPlayer = useMemo(() => {
+    const m = new Map<string, Player>();
+    for (const p of PLAYERS) m.set(p.id, p);
     return m;
   }, []);
 
   const selectedIds = useMemo(() => [a1, a2, b1, b2], [a1, a2, b1, b2]);
 
   const selectionError = useMemo(() => {
-    if (selectedIds.some((x) => !x)) return "Faltan jugadores por seleccionar.";
+    if (selectedIds.some((x: string) => !x)) return "Faltan jugadores por seleccionar.";
     if (uniq(selectedIds).length !== 4) return "No se puede repetir jugador en el mismo set.";
     return "";
   }, [selectedIds]);
@@ -134,28 +127,20 @@ export default function Page() {
       setMsg(selectionError);
       return;
     }
-
     const { aGames, bGames } = parseScore(score);
-
     const row: SetRow = {
       id: crypto.randomUUID(),
-      a1,
-      a2,
-      b1,
-      b2,
-      aGames,
-      bGames,
+      a1, a2, b1, b2, aGames, bGames,
       createdAt: new Date().toISOString(),
     };
-
-    setSets((prev) => [row, ...prev]);
+    setSets((prev: SetRow[]) => [row, ...prev]);
     setMsg("Set guardado ✅");
     setTimeout(() => setMsg(""), 1200);
   }
 
   function undoLast() {
     setMsg("");
-    setSets((prev) => prev.slice(1));
+    setSets((prev: SetRow[]) => prev.slice(1));
   }
 
   function clearAll() {
@@ -166,7 +151,6 @@ export default function Page() {
   }
 
   function resetEloSeason() {
-    // No borra historial, solo reinicia Elo desde “ahora”
     if (!confirm("¿Iniciar nueva temporada Elo desde ahora? (no borra historial)")) return;
     setEloSeasonStart(new Date().toISOString());
     setMsg("Temporada Elo reiniciada ✅");
@@ -180,14 +164,12 @@ export default function Page() {
     setTimeout(() => setMsg(""), 1200);
   }
 
-  // Winrate por jugador
   const playerStats = useMemo(() => {
-    const stats: Record<string, { tag: string; setsPlayed: number; setsWon: number; winRate: number }> =
-      Object.fromEntries(PLAYERS.map((p) => [p.id, { tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0 }]));
+    const stats: Record<string, { id: string; tag: string; setsPlayed: number; setsWon: number; winRate: number }> =
+      Object.fromEntries(PLAYERS.map((p: Player) => [p.id, { id: p.id, tag: p.tag, setsPlayed: 0, setsWon: 0, winRate: 0 }]));
 
     for (const s of sets) {
       const aWon = s.aGames > s.bGames;
-
       for (const id of [s.a1, s.a2]) {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
@@ -208,9 +190,8 @@ export default function Page() {
     return Object.values(stats).sort((a, b) => b.winRate - a.winRate || b.setsPlayed - a.setsPlayed);
   }, [sets]);
 
-  // Winrate por dúo
   const teamStats = useMemo(() => {
-    type DuoKey = string; // "a|b" sorted
+    type DuoKey = string;
     const m = new Map<DuoKey, { duo: string; played: number; won: number; winRate: number }>();
 
     function keyOf(p1: string, p2: string) {
@@ -225,10 +206,8 @@ export default function Page() {
       const aObj =
         m.get(aKey) ??
         {
-          duo: `${idToTag.get(s.a1) ?? s.a1} + ${idToTag.get(s.a2) ?? s.a2}`,
-          played: 0,
-          won: 0,
-          winRate: 0,
+          duo: `${idToPlayer.get(s.a1)?.tag ?? s.a1} + ${idToPlayer.get(s.a2)?.tag ?? s.a2}`,
+          played: 0, won: 0, winRate: 0,
         };
       aObj.played += 1;
       if (aWon) aObj.won += 1;
@@ -237,10 +216,8 @@ export default function Page() {
       const bObj =
         m.get(bKey) ??
         {
-          duo: `${idToTag.get(s.b1) ?? s.b1} + ${idToTag.get(s.b2) ?? s.b2}`,
-          played: 0,
-          won: 0,
-          winRate: 0,
+          duo: `${idToPlayer.get(s.b1)?.tag ?? s.b1} + ${idToPlayer.get(s.b2)?.tag ?? s.b2}`,
+          played: 0, won: 0, winRate: 0,
         };
       bObj.played += 1;
       if (!aWon) bObj.won += 1;
@@ -251,16 +228,13 @@ export default function Page() {
     for (const o of arr) o.winRate = o.played ? o.won / o.played : 0;
 
     return arr.sort((a, b) => b.winRate - a.winRate || b.played - a.played);
-  }, [sets, idToTag]);
+  }, [sets, idToPlayer]);
 
-  // Elo computed from (filtered) history — robust (undo works automatically)
   const eloMap = useMemo(() => {
     const elo: Record<string, number> = {};
     for (const p of PLAYERS) elo[p.id] = ELO_START;
 
     const seasonStartMs = eloSeasonStart ? new Date(eloSeasonStart).getTime() : null;
-
-    // Apply in chronological order (oldest -> newest)
     const chronological = [...sets].sort(
       (x, y) => new Date(x.createdAt).getTime() - new Date(y.createdAt).getTime()
     );
@@ -270,7 +244,6 @@ export default function Page() {
       if (seasonStartMs !== null && t < seasonStartMs) continue;
 
       const aWon = s.aGames > s.bGames;
-
       const rA1 = elo[s.a1] ?? ELO_START;
       const rA2 = elo[s.a2] ?? ELO_START;
       const rB1 = elo[s.b1] ?? ELO_START;
@@ -290,17 +263,16 @@ export default function Page() {
       elo[s.b1] = roundElo((elo[s.b1] ?? ELO_START) - share);
       elo[s.b2] = roundElo((elo[s.b2] ?? ELO_START) - share);
     }
-
     return elo;
   }, [sets, eloSeasonStart]);
 
   const eloRanking = useMemo(() => {
     return [...PLAYERS]
-      .map((p) => ({ id: p.id, tag: p.tag, elo: eloMap[p.id] ?? ELO_START }))
+      .map((p: Player) => ({ id: p.id, tag: p.tag, avatar: p.avatar, elo: eloMap[p.id] ?? ELO_START }))
       .sort((a, b) => b.elo - a.elo);
   }, [eloMap]);
 
-  const playerOptions = PLAYERS.map((p) => (
+  const playerOptions = PLAYERS.map((p: Player) => (
     <option key={p.id} value={p.id}>
       {p.tag}
     </option>
@@ -326,21 +298,18 @@ export default function Page() {
               onClick={undoLast}
               className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-40"
               disabled={sets.length === 0}
-              title="Deshacer último set"
             >
               Undo
             </button>
             <button
               onClick={resetEloSeason}
               className="px-3 py-2 rounded-lg bg-indigo-900/60 hover:bg-indigo-900 text-sm"
-              title="Iniciar nueva temporada Elo desde ahora"
             >
               Reset Elo (Temporada)
             </button>
             <button
               onClick={resetEloSeasonToAllTime}
               className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
-              title="Volver a calcular Elo con todo el historial"
             >
               Elo: Todo
             </button>
@@ -348,7 +317,6 @@ export default function Page() {
               onClick={clearAll}
               className="px-3 py-2 rounded-lg bg-red-900/60 hover:bg-red-900 text-sm disabled:opacity-40"
               disabled={sets.length === 0}
-              title="Borrar todo"
             >
               Borrar
             </button>
@@ -368,26 +336,16 @@ export default function Page() {
         )}
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Registrar */}
           <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 lg:col-span-1">
             <h2 className="text-lg font-semibold mb-3">Registrar set</h2>
-
             <div className="space-y-3">
               <div>
                 <div className="text-sm text-zinc-400 mb-1">Team A</div>
                 <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={a1}
-                    onChange={(e) => setA1(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2"
-                  >
+                  <select value={a1} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setA1(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2">
                     {playerOptions}
                   </select>
-                  <select
-                    value={a2}
-                    onChange={(e) => setA2(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2"
-                  >
+                  <select value={a2} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setA2(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2">
                     {playerOptions}
                   </select>
                 </div>
@@ -396,18 +354,10 @@ export default function Page() {
               <div>
                 <div className="text-sm text-zinc-400 mb-1">Team B</div>
                 <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={b1}
-                    onChange={(e) => setB1(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2"
-                  >
+                  <select value={b1} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setB1(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2">
                     {playerOptions}
                   </select>
-                  <select
-                    value={b2}
-                    onChange={(e) => setB2(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2"
-                  >
+                  <select value={b2} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setB2(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2">
                     {playerOptions}
                   </select>
                 </div>
@@ -440,48 +390,56 @@ export default function Page() {
               >
                 Guardar set
               </button>
-
-              <div className="text-xs text-zinc-500">
-                Guardado local (este dispositivo). Luego lo hacemos multiusuario si quieres.
-              </div>
             </div>
           </div>
 
-          {/* Stats */}
           <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 lg:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Elo */}
+              
               <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
                 <h3 className="font-semibold mb-2">Ranking Elo (jugadores)</h3>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {eloRanking.map((p, idx) => (
                     <div key={p.id} className="flex items-center justify-between">
-                      <div className="font-medium">
-                        #{idx + 1} {p.tag}
+                      <div className="flex items-center gap-3 font-medium">
+                        <span className="text-zinc-500 text-sm">#{idx + 1}</span>
+                        <img 
+                          src={p.avatar} 
+                          alt={p.tag} 
+                          className="w-8 h-8 rounded-full object-cover border border-zinc-700 bg-zinc-800"
+                        />
+                        <span>{p.tag}</span>
                       </div>
-                      <div className="text-sm text-zinc-300 tabular-nums">{p.elo}</div>
+                      <div className="text-sm text-zinc-300 tabular-nums font-bold">{p.elo}</div>
                     </div>
                   ))}
                 </div>
-                <div className="text-xs text-zinc-500 mt-2">{eloSeasonLabel}</div>
+                <div className="text-xs text-zinc-500 mt-3">{eloSeasonLabel}</div>
               </div>
 
-              {/* Winrate players */}
               <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
                 <h3 className="font-semibold mb-2">Winrate por jugador</h3>
-                <div className="space-y-2">
-                  {playerStats.map((p) => (
-                    <div key={p.tag} className="flex items-center justify-between">
-                      <div className="font-medium">{p.tag}</div>
+                <div className="space-y-3">
+                  {playerStats.map((p) => {
+                    const fullPlayer = idToPlayer.get(p.id);
+                    return (
+                    <div key={p.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 font-medium">
+                        <img 
+                          src={fullPlayer?.avatar} 
+                          alt={p.tag} 
+                          className="w-8 h-8 rounded-full object-cover border border-zinc-700 bg-zinc-800"
+                        />
+                        <span>{p.tag}</span>
+                      </div>
                       <div className="text-sm text-zinc-300 tabular-nums">
                         {p.setsWon}/{p.setsPlayed} · {(p.winRate * 100).toFixed(0)}%
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
 
-              {/* Winrate duos */}
               <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3 md:col-span-2">
                 <h3 className="font-semibold mb-2">Winrate por dúo</h3>
                 {teamStats.length === 0 ? (
@@ -496,24 +454,20 @@ export default function Page() {
                         </div>
                       </div>
                     ))}
-                    {teamStats.length > 12 && (
-                      <div className="text-xs text-zinc-500">Mostrando top 12 (hay {teamStats.length} dúos).</div>
-                    )}
                   </div>
                 )}
               </div>
 
-              {/* History */}
               <div className="md:col-span-2 rounded-xl bg-zinc-950 border border-zinc-800 p-3">
                 <h3 className="font-semibold mb-2">Historial (últimos primero)</h3>
                 {sets.length === 0 ? (
                   <div className="text-sm text-zinc-500">Aún no has guardado sets.</div>
                 ) : (
                   <div className="divide-y divide-zinc-800">
-                    {sets.slice(0, 30).map((s) => {
+                    {sets.slice(0, 30).map((s: SetRow) => {
                       const aWon = s.aGames > s.bGames;
-                      const aNames = `${idToTag.get(s.a1) ?? s.a1} + ${idToTag.get(s.a2) ?? s.a2}`;
-                      const bNames = `${idToTag.get(s.b1) ?? s.b1} + ${idToTag.get(s.b2) ?? s.b2}`;
+                      const aNames = `${idToPlayer.get(s.a1)?.tag ?? s.a1} + ${idToPlayer.get(s.a2)?.tag ?? s.a2}`;
+                      const bNames = `${idToPlayer.get(s.b1)?.tag ?? s.b1} + ${idToPlayer.get(s.b2)?.tag ?? s.b2}`;
                       return (
                         <div key={s.id} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                           <div className="text-sm">
@@ -534,9 +488,6 @@ export default function Page() {
                         </div>
                       );
                     })}
-                    {sets.length > 30 && (
-                      <div className="pt-2 text-xs text-zinc-500">Mostrando últimos 30 (hay {sets.length} sets).</div>
-                    )}
                   </div>
                 )}
               </div>
