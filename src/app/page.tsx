@@ -4,6 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type Player = { id: string; tag: string; avatar: string };
 
+type KD = {
+  kills: number;
+  deaths: number;
+};
+
 type SetRow = {
   id: string;
   a1: string;
@@ -13,7 +18,6 @@ type SetRow = {
   aGames: number;
   bGames: number;
   createdAt: string; // ISO
-  // NEW: K/D por jugador (por set completo)
   stats?: Record<string, KD>; // playerId -> {kills,deaths}
 };
 
@@ -52,24 +56,12 @@ function roundElo(n: number): number {
   return Math.round(n);
 }
 
-function clampInt(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.floor(n));
-}
-
-function kdDefault(): KD {
-  return { kills: 0, deaths: 0 };
-}
-
 export default function Page() {
   const [a1, setA1] = useState<string>(PLAYERS[0]?.id ?? "");
   const [a2, setA2] = useState<string>(PLAYERS[1]?.id ?? "");
   const [b1, setB1] = useState<string>(PLAYERS[2]?.id ?? "");
   const [b2, setB2] = useState<string>(PLAYERS[3]?.id ?? "");
   const [score, setScore] = useState<"2-0" | "2-1" | "1-2" | "0-2">("2-0");
-
-  // NEW: inputs de kills/deaths por jugador (para el set actual)
-  const [kdInputs, setKdInputs] = useState<Record<string, KD>>({});
 
   const [msg, setMsg] = useState<string>("");
   const [sets, setSets] = useState<SetRow[]>([]);
@@ -123,20 +115,6 @@ export default function Page() {
 
   const selectedIds = useMemo(() => [a1, a2, b1, b2], [a1, a2, b1, b2]);
 
-  // Mantener kdInputs siempre listo para los 4 seleccionados
-  useEffect(() => {
-    setKdInputs((prev) => {
-      const next = { ...prev };
-      for (const id of selectedIds) {
-        if (!id) continue;
-        if (!next[id]) next[id] = kdDefault();
-        // normaliza por si venían cosas raras
-        next[id] = { kills: clampInt(next[id].kills), deaths: clampInt(next[id].deaths) };
-      }
-      return next;
-    });
-  }, [selectedIds.join("|")]);
-
   const selectionError = useMemo(() => {
     if (selectedIds.some((x: string) => !x)) return "Faltan jugadores por seleccionar.";
     if (uniq(selectedIds).length !== 4) return "No se puede repetir jugador en el mismo set.";
@@ -150,14 +128,6 @@ export default function Page() {
     return { aGames: 0, bGames: 2 };
   }
 
-  function setKd(id: string, field: "kills" | "deaths", value: string) {
-    const n = clampInt(Number(value));
-    setKdInputs((prev) => ({
-      ...prev,
-      [id]: { ...(prev[id] ?? kdDefault()), [field]: n },
-    }));
-  }
-
   function addSet() {
     if (selectionError) {
       setMsg(selectionError);
@@ -168,7 +138,6 @@ export default function Page() {
       id: crypto.randomUUID(),
       a1, a2, b1, b2, aGames, bGames,
       createdAt: new Date().toISOString(),
-      stats,
     };
     setSets((prev: SetRow[]) => [row, ...prev]);
     setMsg("Set guardado ✅");
@@ -211,32 +180,20 @@ export default function Page() {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (aWon) stats[id].setsWon += 1;
-
-        const kd = getKD(s, id);
-        stats[id].kills += kd.kills;
-        stats[id].deaths += kd.deaths;
       }
       for (const id of [s.b1, s.b2]) {
         if (!stats[id]) continue;
         stats[id].setsPlayed += 1;
         if (!aWon) stats[id].setsWon += 1;
-
-        const kd = getKD(s, id);
-        stats[id].kills += kd.kills;
-        stats[id].deaths += kd.deaths;
       }
     }
 
     for (const id of Object.keys(stats)) {
       const x = stats[id];
       x.winRate = x.setsPlayed ? x.setsWon / x.setsPlayed : 0;
-      x.diff = x.kills - x.deaths;
     }
 
-    // Orden: winrate desc, diff desc, setsPlayed desc
-    return Object.values(stats).sort(
-      (a, b) => b.winRate - a.winRate || b.diff - a.diff || b.setsPlayed - a.setsPlayed
-    );
+    return Object.values(stats).sort((a, b) => b.winRate - a.winRate || b.setsPlayed - a.setsPlayed);
   }, [sets]);
 
   const teamStats = useMemo(() => {
@@ -432,56 +389,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* NEW: Kills/Deaths */}
-              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3">
-                <div className="text-sm font-semibold mb-2">Kills / Deaths (por set)</div>
-
-                <div className="space-y-2">
-                  {selectedIds.map((id) => {
-                    const tag = idToTag.get(id) ?? id;
-                    const kd = kdInputs[id] ?? kdDefault();
-                    const diff = (kd.kills ?? 0) - (kd.deaths ?? 0);
-                    const diffLabel = diff >= 0 ? `+${diff}` : `${diff}`;
-
-                    return (
-                      <div
-                        key={id}
-                        className="grid grid-cols-12 gap-2 items-center"
-                      >
-                        <div className="col-span-5 text-sm font-medium truncate">
-                          {tag} <span className="text-xs text-zinc-500">({diffLabel})</span>
-                        </div>
-
-                        <div className="col-span-3">
-                          <input
-                            type="number"
-                            min={0}
-                            value={kd.kills}
-                            onChange={(e) => setKd(id, "kills", e.target.value)}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-sm"
-                            placeholder="Kills"
-                          />
-                        </div>
-
-                        <div className="col-span-3">
-                          <input
-                            type="number"
-                            min={0}
-                            value={kd.deaths}
-                            onChange={(e) => setKd(id, "deaths", e.target.value)}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-sm"
-                            placeholder="Deaths"
-                          />
-                        </div>
-
-                        <div className="col-span-1 text-xs text-zinc-500 text-right">K/D</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                
-              </div>
-
               <button
                 onClick={addSet}
                 className="w-full py-3 rounded-xl bg-emerald-500 text-zinc-950 font-bold hover:bg-emerald-400 disabled:opacity-40"
@@ -568,25 +475,21 @@ export default function Page() {
                       const aNames = `${idToPlayer.get(s.a1)?.tag ?? s.a1} + ${idToPlayer.get(s.a2)?.tag ?? s.a2}`;
                       const bNames = `${idToPlayer.get(s.b1)?.tag ?? s.b1} + ${idToPlayer.get(s.b2)?.tag ?? s.b2}`;
                       return (
-                        <div key={s.id} className="py-2 flex flex-col gap-1">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                            <div className="text-sm">
-                              <span className={aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
-                                {aNames}
-                              </span>{" "}
-                              <span className="text-zinc-500">vs</span>{" "}
-                              <span className={!aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
-                                {bNames}
-                              </span>
-                            </div>
-                            <div className="text-xs text-zinc-400 tabular-nums flex gap-3">
-                              <span className="font-semibold text-zinc-200">{s.aGames}-{s.bGames}</span>
-                              <span>{fmtDate(s.createdAt)}</span>
-                            </div>
+                        <div key={s.id} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                          <div className="text-sm">
+                            <span className={aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
+                              {aNames}
+                            </span>{" "}
+                            <span className="text-zinc-500">vs</span>{" "}
+                            <span className={!aWon ? "text-emerald-300 font-semibold" : "text-zinc-200"}>
+                              {bNames}
+                            </span>
                           </div>
-
-                          <div className="text-xs text-zinc-500">
-                            Diffs: {diffParts.join(" · ")}
+                          <div className="text-xs text-zinc-400 tabular-nums flex gap-3">
+                            <span className="font-semibold text-zinc-200">
+                              {s.aGames}-{s.bGames}
+                            </span>
+                            <span>{fmtDate(s.createdAt)}</span>
                           </div>
                         </div>
                       );
