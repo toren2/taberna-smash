@@ -249,7 +249,7 @@ export default function Page() {
               <SetForm players={players} onSubmit={addSet} />
             </div>
             <div className="lg:col-span-2">
-              <CharacterStatsBoard players={players} playerFullStats={playerFullStats} />
+              <CharacterStatsBoard players={players} sets={sets} playerFullStats={playerFullStats} />
             </div>
           </section>
         ) : (

@@ -37,6 +37,7 @@ export type PlayerFullStats = {
   headToHead: Record<string, H2HCell>;
   favoriteCharacter: CharacterStat | null;
   bestCharacter: CharacterStat | null;
+  worstCharacter: CharacterStat | null;
   characterStats: CharacterStat[];
 };
 
@@ -183,10 +184,11 @@ export function computePlayerFullStats(
       }))
       .sort((a, b) => b.played - a.played);
     const favoriteCharacter = charList[0] ?? null;
+    const eligibleChars = [...charList].filter((c) => c.played >= MIN_GAMES_FOR_MATCHUP);
     const bestCharacter =
-      [...charList]
-        .filter((c) => c.played >= MIN_GAMES_FOR_MATCHUP)
-        .sort((a, b) => b.winRate - a.winRate || b.played - a.played)[0] ?? null;
+      [...eligibleChars].sort((a, b) => b.winRate - a.winRate || b.played - a.played)[0] ?? null;
+    const worstCharacter =
+      [...eligibleChars].sort((a, b) => a.winRate - b.winRate || b.played - a.played)[0] ?? null;
 
     const h2hObj: Record<string, H2HCell> = {};
     for (const [id, cell] of headToHead.entries()) h2hObj[id] = cell;
@@ -212,6 +214,7 @@ export function computePlayerFullStats(
       headToHead: h2hObj,
       favoriteCharacter,
       bestCharacter,
+      worstCharacter,
       characterStats: charList,
     };
   }
@@ -311,4 +314,65 @@ export function computeBadges(
   }
 
   return badges;
+}
+
+
+export type GlobalCharacterStat = CharacterStat & {
+  players: { id: string; tag: string; played: number }[];
+};
+
+/** Ranking global de personajes: agrega kills/wins/deaths de TODOS los jugadores, sin importar quién los usó. */
+export function computeCharacterLeaderboard(
+  players: Player[],
+  sets: SetRow[]
+): GlobalCharacterStat[] {
+  const idToTag = new Map(players.map((p) => [p.id, p.tag]));
+  const byChar = new Map<
+    string,
+    { played: number; won: number; kills: number; deaths: number; byPlayer: Map<string, number> }
+  >();
+
+  for (const s of sets) {
+    const aWon = s.a_games > s.b_games;
+    const involved: { id: string; won: boolean }[] = [
+      { id: s.a1, won: aWon },
+      { id: s.a2, won: aWon },
+      { id: s.b1, won: !aWon },
+      { id: s.b2, won: !aWon },
+    ];
+
+    for (const { id, won } of involved) {
+      const kd = s.stats?.[id];
+      if (!kd?.character) continue;
+      const entry = byChar.get(kd.character) ?? {
+        played: 0,
+        won: 0,
+        kills: 0,
+        deaths: 0,
+        byPlayer: new Map<string, number>(),
+      };
+      entry.played += 1;
+      if (won) entry.won += 1;
+      entry.kills += kd.kills ?? 0;
+      entry.deaths += kd.deaths ?? 0;
+      entry.byPlayer.set(id, (entry.byPlayer.get(id) ?? 0) + 1);
+      byChar.set(kd.character, entry);
+    }
+  }
+
+  return Array.from(byChar.entries())
+    .map(([character, v]) => ({
+      character,
+      played: v.played,
+      won: v.won,
+      winRate: v.played ? v.won / v.played : 0,
+      kills: v.kills,
+      deaths: v.deaths,
+      killsPerSet: v.played ? v.kills / v.played : 0,
+      deathsPerSet: v.played ? v.deaths / v.played : 0,
+      players: Array.from(v.byPlayer.entries())
+        .map(([id, played]) => ({ id, tag: idToTag.get(id) ?? id, played }))
+        .sort((a, b) => b.played - a.played),
+    }))
+    .sort((a, b) => b.played - a.played);
 }
