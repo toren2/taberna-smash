@@ -11,6 +11,7 @@ import { History } from "@/components/History";
 import { HeadToHeadMatrix } from "@/components/HeadToHeadMatrix";
 import { BadgesRow } from "@/components/BadgesRow";
 import { NightlyMVP } from "@/components/NightlyMVP";
+import { CharacterStatsBoard } from "@/components/CharacterStatsBoard";
 import { PlayerProfileModal } from "@/components/PlayerProfileModal";
 import { DuoEntry, DuoStatsPanel, EloEntry, EloRanking, PlayerStatEntry, PlayerStatsPanel } from "@/components/Rankings";
 import { computeEloHistory, computeEloMap, ELO_K, ELO_START } from "@/lib/elo";
@@ -41,6 +42,7 @@ export default function Page() {
     deletePlayer,
   } = useTabernaData();
 
+  const [activeTab, setActiveTab] = useState<"resumen" | "personajes">("resumen");
   const [showPlayers, setShowPlayers] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -214,8 +216,42 @@ export default function Page() {
 
         {msg && <div className="rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)] p-3 text-sm text-center">{msg}</div>}
 
+        {!loading && (
+          <div className="flex gap-2 border-b border-[var(--card-border)]">
+            <button
+              onClick={() => setActiveTab("resumen")}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+                activeTab === "resumen"
+                  ? "border-indigo-500 text-indigo-400"
+                  : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              Resumen
+            </button>
+            <button
+              onClick={() => setActiveTab("personajes")}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+                activeTab === "personajes"
+                  ? "border-indigo-500 text-indigo-400"
+                  : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              Personajes
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center text-sm text-[var(--muted)] py-10">Cargando datos...</div>
+        ) : activeTab === "personajes" ? (
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-1">
+              <SetForm players={players} onSubmit={addSet} />
+            </div>
+            <div className="lg:col-span-2">
+              <CharacterStatsBoard players={players} playerFullStats={playerFullStats} />
+            </div>
+          </section>
         ) : (
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-1">

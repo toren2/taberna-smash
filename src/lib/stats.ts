@@ -5,7 +5,16 @@ export type H2HCell = {
   asOpponent: { played: number; won: number };
   asTeammate: { played: number; won: number };
 };
-export type CharacterStat = { character: string; played: number; won: number; winRate: number };
+export type CharacterStat = {
+  character: string;
+  played: number;
+  won: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  killsPerSet: number;
+  deathsPerSet: number;
+};
 
 export type PlayerFullStats = {
   id: string;
@@ -28,6 +37,7 @@ export type PlayerFullStats = {
   headToHead: Record<string, H2HCell>;
   favoriteCharacter: CharacterStat | null;
   bestCharacter: CharacterStat | null;
+  characterStats: CharacterStat[];
 };
 
 const MIN_GAMES_FOR_MATCHUP = 2;
@@ -56,7 +66,7 @@ export function computePlayerFullStats(
     const rivalStats = new Map<string, { played: number; won: number }>();
     const duoStats = new Map<string, { played: number; won: number }>();
     const headToHead = new Map<string, H2HCell>();
-    const charStats = new Map<string, { played: number; won: number }>();
+    const charStats = new Map<string, { played: number; won: number; kills: number; deaths: number }>();
 
     const resultsInOrder: ("W" | "L")[] = [];
 
@@ -79,9 +89,11 @@ export function computePlayerFullStats(
       deaths += kd.deaths ?? 0;
 
       if (kd.character) {
-        const cs = charStats.get(kd.character) ?? { played: 0, won: 0 };
+        const cs = charStats.get(kd.character) ?? { played: 0, won: 0, kills: 0, deaths: 0 };
         cs.played += 1;
         if (won) cs.won += 1;
+        cs.kills += kd.kills ?? 0;
+        cs.deaths += kd.deaths ?? 0;
         charStats.set(kd.character, cs);
       }
 
@@ -158,13 +170,19 @@ export function computePlayerFullStats(
     const rivalList = toMatchupList(rivalStats).sort((a, b) => b.winRate - a.winRate || b.played - a.played);
     const duoList = toMatchupList(duoStats).sort((a, b) => b.winRate - a.winRate || b.played - a.played);
 
-    const charList: CharacterStat[] = Array.from(charStats.entries()).map(([character, v]) => ({
-      character,
-      played: v.played,
-      won: v.won,
-      winRate: v.played ? v.won / v.played : 0,
-    }));
-    const favoriteCharacter = [...charList].sort((a, b) => b.played - a.played)[0] ?? null;
+    const charList: CharacterStat[] = Array.from(charStats.entries())
+      .map(([character, v]) => ({
+        character,
+        played: v.played,
+        won: v.won,
+        winRate: v.played ? v.won / v.played : 0,
+        kills: v.kills,
+        deaths: v.deaths,
+        killsPerSet: v.played ? v.kills / v.played : 0,
+        deathsPerSet: v.played ? v.deaths / v.played : 0,
+      }))
+      .sort((a, b) => b.played - a.played);
+    const favoriteCharacter = charList[0] ?? null;
     const bestCharacter =
       [...charList]
         .filter((c) => c.played >= MIN_GAMES_FOR_MATCHUP)
@@ -194,6 +212,7 @@ export function computePlayerFullStats(
       headToHead: h2hObj,
       favoriteCharacter,
       bestCharacter,
+      characterStats: charList,
     };
   }
 
