@@ -18,6 +18,7 @@ export type SetRow = {
   b_games: number;
   stats: Record<string, KD>;
   created_at: string;
+  deleted_at?: string | null;
 };
 
 export type ScoreOption = "2-0" | "2-1" | "1-2" | "0-2";

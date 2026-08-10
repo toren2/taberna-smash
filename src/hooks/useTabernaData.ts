@@ -15,6 +15,7 @@ function mapSetRow(row: Record<string, unknown>): SetRow {
     b_games: row.b_games as number,
     stats: (row.stats as SetRow["stats"]) ?? {},
     created_at: row.created_at as string,
+    deleted_at: (row.deleted_at as string | null) ?? null,
   };
 }
 
@@ -28,7 +29,11 @@ export function useTabernaData() {
   const loadAll = useCallback(async () => {
     const [playersRes, setsRes, settingsRes] = await Promise.all([
       supabase.from("players").select("*").order("sort_order", { ascending: true }),
-      supabase.from("sets").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("sets")
+        .select("*")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
       supabase.from("app_settings").select("*").eq("key", "elo_season_start").maybeSingle(),
     ]);
 
@@ -73,15 +78,52 @@ export function useTabernaData() {
     []
   );
 
+  /** Undo: no borra para siempre, manda el último set a la papelera (soft-delete). */
   const undoLast = useCallback(async () => {
     if (sets.length === 0) return { error: null };
     const last = sets[0];
-    const { error } = await supabase.from("sets").delete().eq("id", last.id);
+    const { error } = await supabase
+      .from("sets")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", last.id);
     return { error };
   }, [sets]);
 
+  /** Borrar todo: también va a la papelera, no es destructivo hasta que se vacíe. */
   const clearAll = useCallback(async () => {
-    const { error } = await supabase.from("sets").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase
+      .from("sets")
+      .update({ deleted_at: new Date().toISOString() })
+      .is("deleted_at", null);
+    return { error };
+  }, []);
+
+  /** Trae los sets en la papelera (soft-deleted), más recientes primero. */
+  const fetchTrash = useCallback(async (): Promise<{ data: SetRow[]; error: Error | null }> => {
+    const { data, error } = await supabase
+      .from("sets")
+      .select("*")
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false });
+    if (error) return { data: [], error };
+    return { data: ((data ?? []) as Record<string, unknown>[]).map(mapSetRow), error: null };
+  }, []);
+
+  /** Restaura un set de la papelera. */
+  const restoreSet = useCallback(async (id: string) => {
+    const { error } = await supabase.from("sets").update({ deleted_at: null }).eq("id", id);
+    return { error };
+  }, []);
+
+  /** Elimina un set de la papelera para siempre (irreversible). */
+  const hardDeleteSet = useCallback(async (id: string) => {
+    const { error } = await supabase.from("sets").delete().eq("id", id);
+    return { error };
+  }, []);
+
+  /** Vacía toda la papelera para siempre (irreversible). */
+  const emptyTrash = useCallback(async () => {
+    const { error } = await supabase.from("sets").delete().not("deleted_at", "is", null);
     return { error };
   }, []);
 
@@ -131,6 +173,10 @@ export function useTabernaData() {
     addSet,
     undoLast,
     clearAll,
+    fetchTrash,
+    restoreSet,
+    hardDeleteSet,
+    emptyTrash,
     setEloSeasonStart,
     addPlayer,
     renamePlayer,

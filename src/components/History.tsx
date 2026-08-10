@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Player, SetRow } from "@/lib/types";
 import { Avatar } from "./Avatar";
+import { ShareSetButton } from "./ShareSetButton";
 
 function fmtDate(iso: string) {
   try {
@@ -127,9 +128,10 @@ export function History({
                       </button>
                     ))}
                   </div>
-                  <div className="text-xs text-[var(--muted)] tabular-nums flex gap-3">
+                  <div className="text-xs text-[var(--muted)] tabular-nums flex items-center gap-3">
                     <span className="font-semibold">{s.a_games}-{s.b_games}</span>
                     <span>{fmtDate(s.created_at)}</span>
+                    <ShareSetButton set={s} idToTag={idToTag} />
                   </div>
                 </div>
                 <div className="text-xs text-[var(--muted)]">Diffs: {diffParts.join(" · ")}</div>

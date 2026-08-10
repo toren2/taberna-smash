@@ -12,6 +12,8 @@ import { HeadToHeadMatrix } from "@/components/HeadToHeadMatrix";
 import { BadgesRow } from "@/components/BadgesRow";
 import { NightlyMVP } from "@/components/NightlyMVP";
 import { CharacterStatsBoard } from "@/components/CharacterStatsBoard";
+import { SettingsMenu } from "@/components/SettingsMenu";
+import { WeeklySummary } from "@/components/WeeklySummary";
 import { PlayerProfileModal } from "@/components/PlayerProfileModal";
 import { DuoEntry, DuoStatsPanel, EloEntry, EloRanking, PlayerStatEntry, PlayerStatsPanel } from "@/components/Rankings";
 import { computeEloHistory, computeEloMap, ELO_K, ELO_START } from "@/lib/elo";
@@ -35,6 +37,10 @@ export default function Page() {
     addSet,
     undoLast,
     clearAll,
+    fetchTrash,
+    restoreSet,
+    hardDeleteSet,
+    emptyTrash,
     setEloSeasonStart,
     addPlayer,
     renamePlayer,
@@ -44,6 +50,7 @@ export default function Page() {
 
   const [activeTab, setActiveTab] = useState<"resumen" | "personajes">("resumen");
   const [showPlayers, setShowPlayers] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -150,25 +157,28 @@ export default function Page() {
 
   async function handleUndo() {
     const { error } = await undoLast();
-    flash(error ? "No se pudo deshacer." : "Último set eliminado.");
+    flash(error ? "No se pudo deshacer." : "Último set eliminado (va a la papelera).");
   }
 
   async function handleClear() {
-    if (!confirm("¿Borrar todo el historial para todo el grupo? Esta acción no se puede deshacer.")) return;
+    if (!confirm("¿Borrar todo el historial para todo el grupo? (se puede restaurar desde la papelera)")) return;
     const { error } = await clearAll();
-    flash(error ? "No se pudo borrar." : "Historial borrado.");
+    flash(error ? "No se pudo borrar." : "Historial borrado (va a la papelera).");
+    setShowSettings(false);
   }
 
   async function handleResetSeason() {
     if (!confirm("¿Iniciar nueva temporada Elo desde ahora? (no borra historial)")) return;
     const { error } = await setEloSeasonStart(new Date().toISOString());
     flash(error ? "No se pudo reiniciar." : "Temporada Elo reiniciada ✅");
+    setShowSettings(false);
   }
 
   async function handleAllTimeElo() {
     if (!confirm("¿Volver Elo a calcularse con TODO el historial?")) return;
     const { error } = await setEloSeasonStart(null);
     flash(error ? "No se pudo actualizar." : "Elo volverá a usar todo el historial.");
+    setShowSettings(false);
   }
 
   const selectedPlayer = selectedPlayerId ? players.find((p) => p.id === selectedPlayerId) ?? null : null;
@@ -202,14 +212,8 @@ export default function Page() {
             <button onClick={handleUndo} disabled={sets.length === 0} className="px-3 py-2 rounded-lg border border-[var(--card-border)] text-sm hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40">
               Undo
             </button>
-            <button onClick={handleResetSeason} className="px-3 py-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-sm hover:bg-indigo-500/20">
-              Reset Elo (Temporada)
-            </button>
-            <button onClick={handleAllTimeElo} className="px-3 py-2 rounded-lg border border-[var(--card-border)] text-sm hover:bg-black/5 dark:hover:bg-white/5">
-              Elo: Todo
-            </button>
-            <button onClick={handleClear} disabled={sets.length === 0} className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm hover:bg-red-500/20 disabled:opacity-40">
-              Borrar
+            <button onClick={() => setShowSettings(true)} className="px-3 py-2 rounded-lg border border-[var(--card-border)] text-sm hover:bg-black/5 dark:hover:bg-white/5">
+              ⚙️ Ajustes
             </button>
           </div>
         </header>
@@ -267,6 +271,12 @@ export default function Page() {
                   eloSeasonStart={eloSeasonStart}
                   onSelectPlayer={setSelectedPlayerId}
                 />
+                <WeeklySummary
+                  players={players}
+                  sets={sets}
+                  eloSeasonStart={eloSeasonStart}
+                  onSelectPlayer={setSelectedPlayerId}
+                />
                 <EloRanking ranking={eloRanking} seasonLabel={eloSeasonLabel} onSelectPlayer={setSelectedPlayerId} />
                 <PlayerStatsPanel stats={playerStats} onSelectPlayer={setSelectedPlayerId} />
 
@@ -292,6 +302,23 @@ export default function Page() {
           onSetActive={setPlayerActive}
           onDelete={deletePlayer}
           onClose={() => setShowPlayers(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsMenu
+          players={players}
+          idToTag={idToTag}
+          sets={sets}
+          eloSeasonLabel={eloSeasonLabel}
+          onResetSeason={handleResetSeason}
+          onAllTimeElo={handleAllTimeElo}
+          onClearAll={handleClear}
+          fetchTrash={fetchTrash}
+          onRestore={restoreSet}
+          onHardDelete={hardDeleteSet}
+          onEmptyTrash={emptyTrash}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
