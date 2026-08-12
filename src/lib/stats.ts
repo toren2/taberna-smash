@@ -376,3 +376,145 @@ export function computeCharacterLeaderboard(
     }))
     .sort((a, b) => b.played - a.played);
 }
+
+
+/* ---------- Mejor usuario por personaje ---------- */
+
+export type CharacterUserStat = {
+  playerId: string;
+  tag: string;
+  played: number;
+  won: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  eligible: boolean; // true si cumple el mínimo de partidas para comparar
+};
+
+export type CharacterUsers = {
+  character: string;
+  totalPlayed: number;
+  users: CharacterUserStat[];
+};
+
+/** Para cada personaje, quién lo jugó y con qué resultado (para saber quién es "el mejor usando X"). */
+export function computeCharacterUserBoard(
+  players: Player[],
+  sets: SetRow[]
+): CharacterUsers[] {
+  const idToTag = new Map(players.map((p) => [p.id, p.tag]));
+  const byChar = new Map<string, Map<string, { played: number; won: number; kills: number; deaths: number }>>();
+
+  for (const s of sets) {
+    const aWon = s.a_games > s.b_games;
+    const involved: { id: string; won: boolean }[] = [
+      { id: s.a1, won: aWon },
+      { id: s.a2, won: aWon },
+      { id: s.b1, won: !aWon },
+      { id: s.b2, won: !aWon },
+    ];
+
+    for (const { id, won } of involved) {
+      const kd = s.stats?.[id];
+      if (!kd?.character) continue;
+      const byPlayer = byChar.get(kd.character) ?? new Map<string, { played: number; won: number; kills: number; deaths: number }>();
+      const entry = byPlayer.get(id) ?? { played: 0, won: 0, kills: 0, deaths: 0 };
+      entry.played += 1;
+      if (won) entry.won += 1;
+      entry.kills += kd.kills ?? 0;
+      entry.deaths += kd.deaths ?? 0;
+      byPlayer.set(id, entry);
+      byChar.set(kd.character, byPlayer);
+    }
+  }
+
+  return Array.from(byChar.entries())
+    .map(([character, byPlayer]) => {
+      const users: CharacterUserStat[] = Array.from(byPlayer.entries())
+        .map(([playerId, v]) => ({
+          playerId,
+          tag: idToTag.get(playerId) ?? playerId,
+          played: v.played,
+          won: v.won,
+          winRate: v.played ? v.won / v.played : 0,
+          kills: v.kills,
+          deaths: v.deaths,
+          eligible: v.played >= MIN_GAMES_FOR_MATCHUP,
+        }))
+        .sort((a, b) => {
+          if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
+          return b.winRate - a.winRate || b.played - a.played;
+        });
+      const totalPlayed = users.reduce((sum, u) => sum + u.played, 0);
+      return { character, totalPlayed, users };
+    })
+    .sort((a, b) => b.totalPlayed - a.totalPlayed);
+}
+
+/* ---------- Matchups por combinación de personajes (jugador + personaje) ---------- */
+
+export type ComboMember = { playerId: string; tag: string; character: string };
+export type ComboSide = { key: string; label: string; members: ComboMember[] };
+
+export type ComboMatchup = {
+  left: ComboSide;
+  right: ComboSide;
+  played: number;
+  leftWins: number;
+  rightWins: number;
+};
+
+function comboSignature(members: ComboMember[]): { key: string; label: string } {
+  const sorted = [...members].sort((a, b) => a.playerId.localeCompare(b.playerId));
+  const key = sorted.map((m) => `${m.playerId}#${m.character}`).join("+");
+  const label = sorted.map((m) => `${m.character} (${m.tag})`).join(" + ");
+  return { key, label };
+}
+
+/** Qué combinación de personajes (identificando quién juega a cada uno) le gana a cuál otra. */
+export function computeComboMatchups(players: Player[], sets: SetRow[]): ComboMatchup[] {
+  const idToTag = new Map(players.map((p) => [p.id, p.tag]));
+  const table = new Map<
+    string,
+    { left: ComboSide; right: ComboSide; played: number; leftWins: number; rightWins: number }
+  >();
+
+  for (const s of sets) {
+    const aMembers: (ComboMember | null)[] = [s.a1, s.a2].map((id) => {
+      const kd = s.stats?.[id];
+      return kd?.character ? { playerId: id, tag: idToTag.get(id) ?? id, character: kd.character } : null;
+    });
+    const bMembers: (ComboMember | null)[] = [s.b1, s.b2].map((id) => {
+      const kd = s.stats?.[id];
+      return kd?.character ? { playerId: id, tag: idToTag.get(id) ?? id, character: kd.character } : null;
+    });
+    if (aMembers.some((m) => m === null) || bMembers.some((m) => m === null)) continue;
+
+    const teamA = comboSignature(aMembers as ComboMember[]);
+    const teamB = comboSignature(bMembers as ComboMember[]);
+    const aWon = s.a_games > s.b_games;
+
+    const matchupId = [teamA.key, teamB.key].sort().join(" || ");
+    let entry = table.get(matchupId);
+    if (!entry) {
+      const leftIsA = teamA.key <= teamB.key;
+      entry = {
+        left: leftIsA ? { ...teamA, members: aMembers as ComboMember[] } : { ...teamB, members: bMembers as ComboMember[] },
+        right: leftIsA ? { ...teamB, members: bMembers as ComboMember[] } : { ...teamA, members: aMembers as ComboMember[] },
+        played: 0,
+        leftWins: 0,
+        rightWins: 0,
+      };
+      table.set(matchupId, entry);
+    }
+
+    entry.played += 1;
+    const winnerKey = aWon ? teamA.key : teamB.key;
+    if (winnerKey === entry.left.key) entry.leftWins += 1;
+    else entry.rightWins += 1;
+  }
+
+  return Array.from(table.values())
+    .filter((m) => m.played >= MIN_GAMES_FOR_MATCHUP)
+    .sort((a, b) => b.played - a.played);
+}
