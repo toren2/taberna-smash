@@ -297,6 +297,7 @@ function ByCharacterView({ players, sets }: { players: Player[]; sets: SetRow[] 
 
 function LineupsView({ players, sets }: { players: Player[]; sets: SetRow[] }) {
   const lineups = useMemo(() => computeTeamComboPerformance(players, sets), [players, sets]);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   if (lineups.length === 0) {
     return (
@@ -310,18 +311,47 @@ function LineupsView({ players, sets }: { players: Player[]; sets: SetRow[] }) {
 
   return (
     <div className="space-y-2">
-      {lineups.map((l, i) => (
-        <div key={l.key} className="rounded-xl border border-[var(--card-border)] p-3 flex items-center gap-3">
-          {i === 0 && <span title="Mejor alineación">👑</span>}
-          <div className="flex-1">
-            <div className="font-semibold text-sm">{l.label}</div>
-            <div className="text-xs text-[var(--muted)] mt-0.5">
-              {l.won}/{l.played} sets jugados juntos
-            </div>
+      <div className="text-xs text-[var(--muted)] mb-1">Toca una alineación para ver contra quién le va mejor y peor.</div>
+      {lineups.map((l, i) => {
+        const isOpen = expanded === l.key;
+        return (
+          <div key={l.key} className="rounded-xl border border-[var(--card-border)] overflow-hidden">
+            <button
+              onClick={() => setExpanded(isOpen ? null : l.key)}
+              className="w-full p-3 flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              {i === 0 && <span title="Mejor alineación">👑</span>}
+              <div className="flex-1">
+                <div className="font-semibold text-sm">{l.label}</div>
+                <div className="text-xs text-[var(--muted)] mt-0.5">
+                  {l.won}/{l.played} sets jugados juntos
+                </div>
+              </div>
+              <div className="text-lg font-bold tabular-nums text-emerald-500">{pct(l.winRate)}</div>
+              <span className="text-[var(--muted)] text-xs">{isOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {isOpen && (
+              <div className="border-t border-[var(--card-border)] p-3 bg-black/5 dark:bg-white/5">
+                <div className="text-xs text-[var(--muted)] mb-2">Contra quién han jugado:</div>
+                <div className="space-y-1.5">
+                  {l.vsOpponents.map((o) => {
+                    const lost = o.played - o.won;
+                    return (
+                      <div key={o.key} className="flex items-center justify-between text-sm">
+                        <span className="font-medium">{o.label}</span>
+                        <span className="text-xs text-[var(--muted)] tabular-nums">
+                          {o.won}V-{lost}D <span className="text-[var(--foreground)] font-semibold">({pct(o.winRate)})</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-          <div className="text-lg font-bold tabular-nums text-emerald-500">{pct(l.winRate)}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
