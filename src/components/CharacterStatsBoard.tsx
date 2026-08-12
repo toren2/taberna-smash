@@ -6,7 +6,7 @@ import {
   PlayerFullStats,
   computeCharacterLeaderboard,
   computeCharacterUserBoard,
-  computeComboMatchups,
+  computeTeamComboPerformance,
 } from "@/lib/stats";
 import { Avatar } from "./Avatar";
 
@@ -14,7 +14,7 @@ function pct(n: number) {
   return `${(n * 100).toFixed(0)}%`;
 }
 
-type SubTab = "jugador" | "personaje" | "combos";
+type SubTab = "jugador" | "personaje" | "alineaciones";
 
 export function CharacterStatsBoard({
   players,
@@ -47,7 +47,7 @@ export function CharacterStatsBoard({
           [
             ["jugador", "Por jugador"],
             ["personaje", "Por personaje"],
-            ["combos", "Combos"],
+            ["alineaciones", "Alineaciones"],
           ] as [SubTab, string][]
         ).map(([key, label]) => (
           <button
@@ -66,7 +66,7 @@ export function CharacterStatsBoard({
 
       {subTab === "jugador" && <ByPlayerView players={playersWithSets} playerFullStats={playerFullStats} />}
       {subTab === "personaje" && <ByCharacterView players={players} sets={sets} />}
-      {subTab === "combos" && <CombosView players={players} sets={sets} />}
+      {subTab === "alineaciones" && <LineupsView players={players} sets={sets} />}
     </div>
   );
 }
@@ -295,48 +295,33 @@ function ByCharacterView({ players, sets }: { players: Player[]; sets: SetRow[] 
   );
 }
 
-function CombosView({ players, sets }: { players: Player[]; sets: SetRow[] }) {
-  const matchups = useMemo(() => computeComboMatchups(players, sets), [players, sets]);
+function LineupsView({ players, sets }: { players: Player[]; sets: SetRow[] }) {
+  const lineups = useMemo(() => computeTeamComboPerformance(players, sets), [players, sets]);
 
-  if (matchups.length === 0) {
+  if (lineups.length === 0) {
     return (
       <div className="text-sm text-[var(--muted)]">
-        Todavía no hay suficientes datos. Para que aparezca un matchup acá, los 4 jugadores de un set deben tener
-        personaje anotado, y esa misma combinación exacta (jugador + personaje de cada lado) tiene que repetirse al
-        menos 2 veces.
+        Todavía no hay suficientes datos. Una "alineación" es una pareja de jugador+personaje jugando en el mismo
+        equipo (ej. Pyra de Meliodas + Roy de Zenaku) — necesita repetirse al menos 2 veces, sin importar contra
+        quién hayan jugado, para aparecer acá.
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {matchups.map((m, i) => {
-        const total = m.leftWins + m.rightWins;
-        const leftPct = total ? m.leftWins / total : 0;
-        const rightPct = total ? m.rightWins / total : 0;
-        const leftAhead = m.leftWins > m.rightWins;
-        const rightAhead = m.rightWins > m.leftWins;
-        return (
-          <div key={i} className="rounded-xl border border-[var(--card-border)] p-3">
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <div className={`flex-1 ${leftAhead ? "font-semibold text-emerald-500" : ""}`}>{m.left.label}</div>
-              <div className="text-xs text-[var(--muted)] px-2">vs</div>
-              <div className={`flex-1 text-right ${rightAhead ? "font-semibold text-emerald-500" : ""}`}>
-                {m.right.label}
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-1.5 text-xs text-[var(--muted)] tabular-nums">
-              <span>
-                {m.leftWins}-{m.rightWins} ({pct(leftPct)})
-              </span>
-              <span>{m.played} sets jugados</span>
-              <span>
-                ({pct(rightPct)}) {m.rightWins}-{m.leftWins}
-              </span>
+      {lineups.map((l, i) => (
+        <div key={l.key} className="rounded-xl border border-[var(--card-border)] p-3 flex items-center gap-3">
+          {i === 0 && <span title="Mejor alineación">👑</span>}
+          <div className="flex-1">
+            <div className="font-semibold text-sm">{l.label}</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">
+              {l.won}/{l.played} sets jugados juntos
             </div>
           </div>
-        );
-      })}
+          <div className="text-lg font-bold tabular-nums text-emerald-500">{pct(l.winRate)}</div>
+        </div>
+      ))}
     </div>
   );
 }

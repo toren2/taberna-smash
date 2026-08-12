@@ -454,14 +454,14 @@ export function computeCharacterUserBoard(
 /* ---------- Matchups por combinación de personajes (jugador + personaje) ---------- */
 
 export type ComboMember = { playerId: string; tag: string; character: string };
-export type ComboSide = { key: string; label: string; members: ComboMember[] };
 
-export type ComboMatchup = {
-  left: ComboSide;
-  right: ComboSide;
+export type TeamComboStat = {
+  key: string;
+  label: string;
+  members: ComboMember[];
   played: number;
-  leftWins: number;
-  rightWins: number;
+  won: number;
+  winRate: number;
 };
 
 function comboSignature(members: ComboMember[]): { key: string; label: string } {
@@ -471,50 +471,44 @@ function comboSignature(members: ComboMember[]): { key: string; label: string } 
   return { key, label };
 }
 
-/** Qué combinación de personajes (identificando quién juega a cada uno) le gana a cuál otra. */
-export function computeComboMatchups(players: Player[], sets: SetRow[]): ComboMatchup[] {
+/**
+ * Rendimiento de cada "alineación" (pareja jugador+personaje en el mismo equipo),
+ * sin importar contra quién jugaron. A diferencia de un matchup 1-vs-1, esto sí
+ * acumula datos rápido porque no depende de que se repita también el equipo rival.
+ */
+export function computeTeamComboPerformance(players: Player[], sets: SetRow[]): TeamComboStat[] {
   const idToTag = new Map(players.map((p) => [p.id, p.tag]));
-  const table = new Map<
-    string,
-    { left: ComboSide; right: ComboSide; played: number; leftWins: number; rightWins: number }
-  >();
+  const table = new Map<string, { members: ComboMember[]; label: string; played: number; won: number }>();
 
-  for (const s of sets) {
-    const aMembers: (ComboMember | null)[] = [s.a1, s.a2].map((id) => {
-      const kd = s.stats?.[id];
+  function addTeam(ids: [string, string], won: boolean, statsRow: SetRow["stats"]) {
+    const members: (ComboMember | null)[] = ids.map((id) => {
+      const kd = statsRow?.[id];
       return kd?.character ? { playerId: id, tag: idToTag.get(id) ?? id, character: kd.character } : null;
     });
-    const bMembers: (ComboMember | null)[] = [s.b1, s.b2].map((id) => {
-      const kd = s.stats?.[id];
-      return kd?.character ? { playerId: id, tag: idToTag.get(id) ?? id, character: kd.character } : null;
-    });
-    if (aMembers.some((m) => m === null) || bMembers.some((m) => m === null)) continue;
+    if (members.some((m) => m === null)) return;
 
-    const teamA = comboSignature(aMembers as ComboMember[]);
-    const teamB = comboSignature(bMembers as ComboMember[]);
-    const aWon = s.a_games > s.b_games;
-
-    const matchupId = [teamA.key, teamB.key].sort().join(" || ");
-    let entry = table.get(matchupId);
-    if (!entry) {
-      const leftIsA = teamA.key <= teamB.key;
-      entry = {
-        left: leftIsA ? { ...teamA, members: aMembers as ComboMember[] } : { ...teamB, members: bMembers as ComboMember[] },
-        right: leftIsA ? { ...teamB, members: bMembers as ComboMember[] } : { ...teamA, members: aMembers as ComboMember[] },
-        played: 0,
-        leftWins: 0,
-        rightWins: 0,
-      };
-      table.set(matchupId, entry);
-    }
-
+    const { key, label } = comboSignature(members as ComboMember[]);
+    const entry = table.get(key) ?? { members: members as ComboMember[], label, played: 0, won: 0 };
     entry.played += 1;
-    const winnerKey = aWon ? teamA.key : teamB.key;
-    if (winnerKey === entry.left.key) entry.leftWins += 1;
-    else entry.rightWins += 1;
+    if (won) entry.won += 1;
+    table.set(key, entry);
   }
 
-  return Array.from(table.values())
-    .filter((m) => m.played >= MIN_GAMES_FOR_MATCHUP)
-    .sort((a, b) => b.played - a.played);
+  for (const s of sets) {
+    const aWon = s.a_games > s.b_games;
+    addTeam([s.a1, s.a2], aWon, s.stats);
+    addTeam([s.b1, s.b2], !aWon, s.stats);
+  }
+
+  return Array.from(table.entries())
+    .map(([key, v]) => ({
+      key,
+      label: v.label,
+      members: v.members,
+      played: v.played,
+      won: v.won,
+      winRate: v.played ? v.won / v.played : 0,
+    }))
+    .filter((c) => c.played >= MIN_GAMES_FOR_MATCHUP)
+    .sort((a, b) => b.winRate - a.winRate || b.played - a.played);
 }
